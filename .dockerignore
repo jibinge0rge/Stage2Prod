@@ -1,0 +1,16 @@
+node_modules
+web/node_modules
+web/dist
+data
+.env
+web/.env
+.env.local
+.git
+.gitignore
+.claude
+Stage2Prod UI Mockups
+*.log
+tests
+coverage
+.vscode
+README.md

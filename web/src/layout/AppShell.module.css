@@ -1,0 +1,337 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  min-height: 640px;
+  overflow: hidden;
+}
+
+.topbar {
+  height: 48px;
+  flex-shrink: 0;
+  background: var(--dark-bar);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  position: relative;
+  z-index: 60;
+}
+.loadingBar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  overflow: hidden;
+  background: transparent;
+}
+.loadingBarFill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 40%;
+  background: var(--brand);
+  animation: loadingBarSlide 1.1s ease-in-out infinite;
+}
+@keyframes loadingBarSlide {
+  0% {
+    left: -40%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+.topbarDivider {
+  width: 1px;
+  height: 20px;
+  background: var(--dark-divider);
+  flex-shrink: 0;
+}
+.productName {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--brand-on-fill-text);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+.activePill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: var(--r-button);
+  background: rgba(49, 165, 109, 0.16);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--dark-success-text);
+  text-transform: uppercase;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.topbarMeta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--dark-muted);
+  white-space: nowrap;
+}
+.topbarMeta strong {
+  color: var(--dark-value);
+  font-weight: 500;
+}
+.lastEvent {
+  font-size: 11px;
+  color: var(--dark-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--brand);
+  color: var(--brand-on-fill-text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.sidebar {
+  width: 212px;
+  flex-shrink: 0;
+  background: var(--n-surface);
+  border-right: 1px solid var(--n-border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.sidebarHeader {
+  padding: 14px 14px 10px;
+  border-bottom: 1px solid var(--n-hairline);
+}
+.sidebarHeaderTitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--n-strongest);
+}
+.sidebarRepoLabel {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--n-muted);
+}
+.sidebarGroupLabel {
+  padding: 10px 16px 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--n-muted);
+}
+.sidebarGroupLabel.first {
+  padding-top: 10px;
+}
+.navList {
+  padding: 0 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.navItem {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 500;
+  background: transparent;
+  color: var(--n-muted);
+}
+.navItem:hover {
+  filter: brightness(0.97);
+}
+.navItem.active {
+  background: var(--brand-fill-selected);
+  color: var(--brand);
+}
+.navItem img {
+  flex-shrink: 0;
+}
+/* The nav icon SVGs are static files with a hardcoded dark stroke
+   (#101010) meant for the light sidebar — invisible once the sidebar
+   itself goes dark. Flipping them via filter is the only option short of
+   inlining/recoloring the SVGs, since an <img>'s internal colors aren't
+   reachable from page CSS otherwise. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .navItem img {
+    filter: invert(1);
+  }
+}
+:root[data-theme='dark'] .navItem img {
+  filter: invert(1);
+}
+.sidebarSpacer {
+  flex: 1;
+}
+.legend {
+  margin: 8px;
+  padding: 10px;
+  border: 1px solid var(--n-border);
+  border-radius: var(--r-card);
+  background: var(--n-app-bg);
+}
+.legendTitle {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--n-muted);
+}
+.legendRows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.legendRow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.legendBranch {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--n-body);
+}
+.legendState {
+  font-size: 10px;
+  color: var(--n-muted);
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.contentHeader {
+  flex-shrink: 0;
+  background: var(--n-surface);
+  border-bottom: 1px solid var(--n-border);
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.pageTitle {
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 700;
+  color: var(--n-strongest);
+  margin: 0;
+}
+.pageSub {
+  font-size: 11px;
+  color: var(--n-muted);
+  margin-top: 2px;
+}
+.contentBody {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px 28px;
+}
+
+.drawerAside {
+  width: 400px;
+  flex-shrink: 0;
+  background: var(--n-surface);
+  border-left: 1px solid var(--n-border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: s2p-slide 150ms var(--ease);
+}
+
+.toast {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 110;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 16px;
+  border: 1px solid var(--n-border);
+  border-radius: var(--r-input);
+  background: var(--n-surface);
+  box-shadow: var(--shadow-popover);
+  animation: s2p-fade 220ms var(--ease);
+  font-size: 12px;
+  color: var(--n-strongest);
+}
+
+.modalScrim {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(16, 16, 16, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.modal {
+  width: 100%;
+  max-width: 480px;
+  background: var(--n-surface);
+  border-radius: var(--r-modal);
+  box-shadow: var(--shadow-modal);
+  animation: s2p-scale 150ms var(--ease);
+  overflow: hidden;
+}
+.modalHeader {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--n-hairline);
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 600;
+  color: var(--n-strongest);
+}
+.modalBody {
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.modalFooter {
+  padding: 12px 20px;
+  border-top: 1px solid var(--n-hairline);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}

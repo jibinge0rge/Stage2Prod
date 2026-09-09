@@ -1,2 +1,9 @@
 .env
+web/.env
 Stage2Prod UI Mockups/
+
+node_modules/
+web/node_modules/
+web/dist/
+data/
+*.log

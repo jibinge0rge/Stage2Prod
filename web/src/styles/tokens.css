@@ -1,0 +1,192 @@
+:root {
+  /* Neutrals */
+  --n-strongest: #101010;
+  --n-body: #282828;
+  --n-muted: #6E6E6E;
+  --n-border-strong: #CFCFCF;
+  --n-border: #E6E6E6;
+  --n-hairline: #F0F0F0;
+  --n-fill-subtle: #F5F5F5;
+  --n-app-bg: #F7F9FC;
+  --n-surface: #FFFFFF;
+
+  /* Brand */
+  --brand: #6360D8;
+  --brand-hover: #504BB8;
+  --brand-border-light: #8B88E2;
+  --brand-fill-selected: rgba(99, 96, 216, 0.08);
+  --brand-on-fill-text: #F0F0FC;
+
+  /* Semantic */
+  --success: #31A56D;
+  --success-text: #1A7549;
+  --success-fill: #EFF7ED;
+  --danger: #D12329;
+  --danger-text: #931B1F;
+  --danger-border: #EB8E90;
+  --danger-fill: #F9EEEE;
+  --warning: #D98B1D;
+  --warning-fill: #FEF3C7;
+  --danger-hover-fill: #FFDBDC;
+  --hover-overlay: rgba(0, 0, 0, 0.04);
+
+  /* Dark shell — the top bar is always dark-branded regardless of the
+     overall app theme, so these don't change between light/dark. */
+  --dark-bar: #131313;
+  --dark-divider: #3A3A3A;
+  --dark-muted: #9A9A9A;
+  --dark-value: #D1D1D1;
+  --dark-success-text: #7FD3A6;
+
+  /* Spacing */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-7: 32px;
+  --sp-8: 48px;
+
+  /* Radii */
+  --r-button: 44px;
+  --r-card: 4px;
+  --r-input: 8px;
+  --r-modal: 12px;
+
+  /* Shadows */
+  --shadow-popover: 0 8px 24px rgba(16, 16, 16, 0.08);
+  --shadow-modal: 0 24px 48px rgba(16, 16, 16, 0.16);
+
+  /* Motion */
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+}
+
+/* Dark theme — applied when the OS prefers dark and the user hasn't
+   explicitly chosen "light" (first block), and always when the user has
+   explicitly chosen "dark" (second block, wins regardless of OS setting).
+   Kept as one shared set of values via a data attribute below so the two
+   trigger conditions can't drift apart. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --n-strongest: #F5F5F7;
+    --n-body: #D9D9DE;
+    --n-muted: #9A9AA4;
+    --n-border-strong: #46464E;
+    --n-border: #34343B;
+    --n-hairline: #2A2A30;
+    --n-fill-subtle: #232328;
+    --n-app-bg: #17171B;
+    --n-surface: #1E1E23;
+
+    --brand: #8481EA;
+    --brand-hover: #9C99EF;
+    --brand-border-light: #55519E;
+    --brand-fill-selected: rgba(132, 129, 234, 0.16);
+    --brand-on-fill-text: #F0F0FC;
+
+    --success: #3FBB7C;
+    --success-text: #7FD9AC;
+    --success-fill: rgba(63, 187, 124, 0.14);
+    --danger: #FF5B60;
+    --danger-text: #FF9DA0;
+    --danger-border: #7A3336;
+    --danger-fill: rgba(255, 91, 96, 0.13);
+    --danger-hover-fill: rgba(255, 91, 96, 0.24);
+    --warning: #F0A93D;
+    --warning-fill: rgba(240, 169, 61, 0.14);
+    --hover-overlay: rgba(255, 255, 255, 0.06);
+
+    --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.32);
+    --shadow-modal: 0 24px 48px rgba(0, 0, 0, 0.48);
+  }
+}
+:root[data-theme='dark'] {
+  --n-strongest: #F5F5F7;
+  --n-body: #D9D9DE;
+  --n-muted: #9A9AA4;
+  --n-border-strong: #46464E;
+  --n-border: #34343B;
+  --n-hairline: #2A2A30;
+  --n-fill-subtle: #232328;
+  --n-app-bg: #17171B;
+  --n-surface: #1E1E23;
+
+  --brand: #8481EA;
+  --brand-hover: #9C99EF;
+  --brand-border-light: #55519E;
+  --brand-fill-selected: rgba(132, 129, 234, 0.16);
+  --brand-on-fill-text: #F0F0FC;
+
+  --success: #3FBB7C;
+  --success-text: #7FD9AC;
+  --success-fill: rgba(63, 187, 124, 0.14);
+  --danger: #FF5B60;
+  --danger-text: #FF9DA0;
+  --danger-border: #7A3336;
+  --danger-fill: rgba(255, 91, 96, 0.13);
+  --danger-hover-fill: rgba(255, 91, 96, 0.24);
+  --warning: #F0A93D;
+  --warning-fill: rgba(240, 169, 61, 0.14);
+  --hover-overlay: rgba(255, 255, 255, 0.06);
+
+  --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.32);
+  --shadow-modal: 0 24px 48px rgba(0, 0, 0, 0.48);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  color-scheme: light dark;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--n-app-bg);
+  color: var(--n-body);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 16px;
+  transition: background 150ms var(--ease), color 150ms var(--ease);
+}
+
+a {
+  color: var(--brand);
+  text-decoration: none;
+}
+a:hover {
+  color: var(--brand-hover);
+}
+
+button {
+  font-family: inherit;
+}
+
+@keyframes s2p-fade {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes s2p-scale {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes s2p-slide {
+  from { transform: translateX(12px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}

@@ -1,0 +1,17 @@
+services:
+  stage2prod:
+    build: .
+    image: stage2prod:latest
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      - PORT=3000
+      - DB_PATH=/app/data/stage2prod.db
+    volumes:
+      - stage2prod-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  stage2prod-data:
