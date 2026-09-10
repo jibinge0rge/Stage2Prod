@@ -1,17 +1,37 @@
 # Stage2Prod
 
-A locally-run Jira ↔ GitHub release orchestrator. It polls Jira Cloud for ticket status transitions and drives
-git merges accordingly — never cherry-picking, never reverting, never squashing.
+A locally-run Jira ↔ GitHub release orchestrator. It polls Jira Cloud for ticket status transitions and opens
+the right pull request accordingly — never cherry-picking, never reverting, never squashing, and **never
+merging on its own**: merging staging or production is always a deliberate action a person takes from the
+Stage2Prod dashboard (or Jira status transitions/comments, also doable from the dashboard — see **Ticket
+actions** below).
 
 - `develop` — long-lived, validated production-ready code.
 - `staging` — long-lived but ephemeral in content; a QA test bed that can be wiped at any time.
 - Feature branches are named after Jira ticket keys (`feat/PROJ-101-description` or `PROJ-101-auth`).
 
-| Jira status | Git action |
-|---|---|
-| Ready for QA / In QA | Merge feature branch into `staging` |
-| Approved / Ready for Release / Done | Merge PR into `develop` (merge commit), delete remote branch |
-| In Development / QA Failed | No git action — comment on Jira, label PR `qa-rejected` |
+| Jira status | Automatic | Requires a human click |
+|---|---|---|
+| Ready for QA / In QA | Opens a PR: feature branch → `staging` | **Merge** button → merges the PR |
+| Approved / Ready for Release / Done | Opens a PR: feature branch → `develop` | **Merge** button → merges (merge commit), deletes remote branch |
+| In Development / QA Failed | No git action — comment on Jira, label PR `qa-rejected` | — |
+
+## Ticket actions
+
+The ticket drawer (click any ticket on **Ticket pipeline**) lets you act on a ticket without leaving the
+dashboard:
+- **Transition Jira status** — a dropdown of that ticket's real available Jira transitions
+  (`GET /api/tickets/:key/transitions`); picking one calls Jira immediately, then triggers an out-of-cycle
+  poll (`Poller.pollNow()`) so its effect (e.g. a PR opening) shows up right away instead of waiting for the
+  next scheduled poll.
+- **Comment on Jira** — posts a plain comment to the ticket.
+- **Merge** — appears only once a PR is actually open and awaiting merge (pipeline state `staging_queued` or
+  `queued`); this is the only thing in the whole app that writes to `staging` or `develop`. A PR that can't
+  merge cleanly is caught here (GitHub still lets a conflicting PR be *created*, it just refuses to merge it)
+  and flips the ticket to `conflict`, same as before.
+
+Ticket Pipeline itself shows every currently-open ticket in your configured Jira project(s), not just ones
+that recently changed status — see **Choosing the JQL**.
 
 ## Project layout
 
@@ -39,7 +59,7 @@ Fill in `.env`:
 | `JIRA_HOST` | e.g. `your-domain.atlassian.net` |
 | `JIRA_EMAIL` / `JIRA_API_TOKEN` | See **Creating a Jira API token** below. |
 | `JIRA_JQL` | Fallback JQL, used only until any watched repo has a Jira project key configured — see **Choosing the JQL** below. |
-| `JIRA_POLL_CLAUSE` | The non-project part of the auto-built JQL once repos have project keys (default `status CHANGED AFTER -5m`). |
+| `JIRA_POLL_CLAUSE` | The non-project part of the auto-built JQL once repos have project keys (default `(statusCategory != Done OR updated >= -15m)` — the full open backlog, plus a window so a just-completed transition is still caught — see **Choosing the JQL**). |
 | `API_TOKEN` | Bearer token required to call `POST /api/staging/reset` / `POST /api/repos` / `DELETE /api/repos/...`. Any local secret string. |
 | `DRY_RUN` | `true` to log intended git/Jira writes without performing them — safe for trying the UI out. |
 
@@ -171,19 +191,34 @@ The poller runs `POST /rest/api/3/search/jql` every `POLL_INTERVAL_MS` (default 
 page:
 
 - **No watched repo has a Jira project key yet** — `JIRA_JQL` is used verbatim (the single-project default:
-  `project = PROJ AND status CHANGED AFTER -5m ORDER BY updated ASC`). This is what a fresh install runs
-  before you've configured any repo's Jira project.
+  `project = PROJ AND (statusCategory != Done OR updated >= -15m) ORDER BY updated ASC`). This is what a
+  fresh install runs before you've configured any repo's Jira project.
 - **At least one watched repo has a Jira project key** — the poller instead builds
   `project in ("KEY1", "KEY2", ...) AND {JIRA_POLL_CLAUSE} ORDER BY updated ASC` from the union of every
   watched repo's configured project key. A repo with no project key configured contributes nothing to this
   list, so its tickets simply won't come back from Jira until you set one.
 
-Either way:
-- `status CHANGED AFTER -5m` (the default `JIRA_POLL_CLAUSE`) keeps each poll's result set small; the poller
-  still diffs against its own persisted `last_seen_status` per ticket, so a wider window (or a restart) never
-  re-fires an already-handled transition or replays anything already actioned.
-- `ORDER BY updated ASC` isn't required (the poller re-sorts by `fields.updated` before processing) but keeps
-  the raw response readable if you're inspecting it by hand.
+Either way, the default query is deliberately the **full open backlog** (`statusCategory != Done`), not just
+recent deltas — this is what lets Ticket Pipeline show every open ticket, including ones that haven't changed
+status recently, not only ones caught mid-transition. This is safe to poll broadly: the poller only ever
+*acts* on a genuine status change (`diffIssues` compares each issue against that ticket's own persisted
+`last_seen_status`, which is seeded to the current status the first time a ticket is ever seen — see
+`src/poller/index.js`), so a wide query only adds visibility, it can never replay an action or synthesize a
+transition that didn't happen.
+
+**The `OR updated >= -15m` half of the clause is load-bearing, not decorative.** A plain `statusCategory !=
+Done` excludes a ticket from *every* future search the instant it becomes Done — including the very next
+poll, the one that's supposed to notice it just transitioned there. Without the OR, moving a ticket to
+"Approved"/"Done" would silently do nothing: the search that's meant to catch the transition would have
+already filtered the ticket out before `diffIssues` ever saw it. The OR clause keeps a just-transitioned
+ticket visible for one last 15-minute window — comfortably longer than the default `POLL_INTERVAL_MS`
+(60s) — so the diff (and the resulting `toDevelop` PR-open) actually fires, before the ticket ages out of
+view for good.
+
+`ORDER BY updated ASC` isn't required (the poller re-sorts by `fields.updated` before processing) but keeps
+the raw response readable if you're inspecting it by hand. If you'd rather keep the narrower "only recently
+changed" behavior (accepting that it won't reliably catch transitions into a Done-category status — see
+above), set `JIRA_POLL_CLAUSE=status CHANGED AFTER -5m` (or similar) in `.env`.
 
 ## Verifying the poller is picking up transitions
 

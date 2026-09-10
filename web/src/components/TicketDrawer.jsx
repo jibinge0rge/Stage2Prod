@@ -1,28 +1,65 @@
 import { useState } from 'react';
 import styles from '../layout/AppShell.module.css';
-import { useApi } from '../lib/api';
+import { useApi, postJson } from '../lib/api';
 import { StateBadge } from './Badge';
+import CustomSelect from './CustomSelect';
 import { pipelineStyle, checkStatusColor } from '../lib/styleMaps';
 
-function primaryActionLabel(state) {
-  if (state === 'conflict') return 'Retry merge to staging';
-  if (state === 'queued') return 'Merge into develop';
-  if (state === 'rejected') return 'Clear qa-rejected';
-  return 'Re-run merge';
-}
+const MERGE_TARGET_LABEL = {
+  staging_queued: 'Merge PR into staging',
+  queued: 'Merge PR into develop',
+};
 
 export default function TicketDrawer({ ticketKey, onClose }) {
   const { data: ticket, loading, refresh } = useApi(`/tickets/${ticketKey}`);
-  const [retrying, setRetrying] = useState(false);
+  const { data: health } = useApi('/health');
+  const { data: transitionsData } = useApi(`/tickets/${ticketKey}/transitions`);
+  const [transitioning, setTransitioning] = useState(false);
+  const [transitionError, setTransitionError] = useState(null);
+  const [commentText, setCommentText] = useState('');
+  const [commenting, setCommenting] = useState(false);
+  const [commentError, setCommentError] = useState(null);
+  const [merging, setMerging] = useState(false);
+  const [mergeError, setMergeError] = useState(null);
 
-  async function handlePrimaryAction() {
-    setRetrying(true);
+  async function handleTransition(name) {
+    if (!name) return;
+    setTransitioning(true);
+    setTransitionError(null);
     try {
-      // No manual-retry endpoint exists in the current API — this
-      // re-checks the ticket's live state rather than silently no-op'ing.
+      await postJson(`/tickets/${ticketKey}/transition`, { name });
       await refresh();
+    } catch (err) {
+      setTransitionError(err.message);
     } finally {
-      setRetrying(false);
+      setTransitioning(false);
+    }
+  }
+
+  async function handleComment() {
+    if (!commentText.trim()) return;
+    setCommenting(true);
+    setCommentError(null);
+    try {
+      await postJson(`/tickets/${ticketKey}/comment`, { text: commentText });
+      setCommentText('');
+    } catch (err) {
+      setCommentError(err.message);
+    } finally {
+      setCommenting(false);
+    }
+  }
+
+  async function handleMerge() {
+    setMerging(true);
+    setMergeError(null);
+    try {
+      await postJson(`/tickets/${ticketKey}/merge`, {});
+      await refresh();
+    } catch (err) {
+      setMergeError(err.message);
+    } finally {
+      setMerging(false);
     }
   }
 
@@ -41,7 +78,9 @@ export default function TicketDrawer({ ticketKey, onClose }) {
     );
   }
 
-  const jiraUrl = null; // no JIRA_HOST exposed to the frontend; "Open in Jira" is disabled without it.
+  const jiraUrl = health?.jiraHost ? `https://${health.jiraHost}/browse/${ticket.key}` : null;
+  const mergeLabel = MERGE_TARGET_LABEL[ticket.pipelineState];
+  const transitionOptions = (transitionsData?.transitions ?? []).map((t) => ({ value: t.name, label: t.name }));
 
   return (
     <aside className={styles.drawerAside}>
@@ -63,7 +102,8 @@ export default function TicketDrawer({ ticketKey, onClose }) {
           <div style={{ padding: '11px 12px', border: '1px solid var(--danger-border)', borderRadius: 'var(--r-card)', background: 'var(--danger-fill)' }}>
             <div className="eyebrow" style={{ color: 'var(--danger-text)' }}>Comment posted to Jira</div>
             <div style={{ fontSize: 12, color: 'var(--n-body)', marginTop: 6 }}>
-              Automated merge to staging failed due to merge conflicts with current staging branch. Please resolve locally.
+              This pull request couldn't be merged cleanly. Resolve the conflict on GitHub, then click Merge
+              here again.
             </div>
           </div>
         )}
@@ -113,6 +153,62 @@ export default function TicketDrawer({ ticketKey, onClose }) {
           </div>
         </div>
 
+        <div style={{ border: '1px solid var(--n-border)', borderRadius: 'var(--r-card)', padding: 11, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div className="eyebrow">Actions</div>
+
+          <div>
+            <div style={{ fontSize: 10, color: 'var(--n-muted)', marginBottom: 4 }}>Transition Jira status</div>
+            <CustomSelect
+              value={null}
+              placeholder={transitioning ? 'Transitioning…' : 'Move to…'}
+              options={transitionOptions}
+              disabled={transitioning || transitionOptions.length === 0}
+              onChange={handleTransition}
+              title="Transition Jira status"
+            />
+            {transitionOptions.length === 0 && !transitioning && (
+              <div style={{ fontSize: 11, color: 'var(--n-muted)', marginTop: 4 }}>No transitions available.</div>
+            )}
+            {transitionError && <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 4 }}>{transitionError}</div>}
+          </div>
+
+          <div>
+            <div style={{ fontSize: 10, color: 'var(--n-muted)', marginBottom: 4 }}>Comment on Jira</div>
+            <textarea
+              value={commentText}
+              onChange={(e) => setCommentText(e.target.value)}
+              placeholder="Add a comment…"
+              rows={2}
+              style={{
+                width: '100%',
+                resize: 'vertical',
+                padding: '6px 8px',
+                border: '1px solid var(--n-border)',
+                borderRadius: 'var(--r-input)',
+                background: 'var(--n-surface)',
+                color: 'var(--n-body)',
+                fontSize: 12,
+                fontFamily: 'inherit',
+              }}
+            />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+              <button type="button" className="btn btn-outline" onClick={handleComment} disabled={commenting || !commentText.trim()}>
+                {commenting ? 'Posting…' : 'Post comment'}
+              </button>
+              {commentError && <span style={{ fontSize: 11, color: 'var(--danger)' }}>{commentError}</span>}
+            </div>
+          </div>
+
+          {mergeLabel && (
+            <div>
+              <button type="button" className="btn btn-primary" onClick={handleMerge} disabled={merging}>
+                {merging ? 'Merging…' : mergeLabel}
+              </button>
+              {mergeError && <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 4 }}>{mergeError}</div>}
+            </div>
+          )}
+        </div>
+
         <div>
           <div className="eyebrow" style={{ marginBottom: 9 }}>Orchestration timeline</div>
           {(ticket.timeline || []).length === 0 ? (
@@ -136,12 +232,17 @@ export default function TicketDrawer({ ticketKey, onClose }) {
       </div>
 
       <div style={{ padding: '12px 16px', borderTop: '1px solid var(--n-border)', display: 'flex', alignItems: 'center', gap: 8 }}>
-        <button type="button" className="btn btn-primary" onClick={handlePrimaryAction} disabled={retrying}>
-          {retrying ? 'Checking…' : primaryActionLabel(ticket.pipelineState)}
-        </button>
-        <button type="button" className="btn btn-outline" disabled={!jiraUrl} title={jiraUrl ? undefined : 'JIRA_HOST not exposed to the frontend'}>
+        <a
+          href={jiraUrl ?? undefined}
+          target="_blank"
+          rel="noreferrer"
+          className="btn btn-outline"
+          aria-disabled={!jiraUrl}
+          style={!jiraUrl ? { pointerEvents: 'none', opacity: 0.6 } : undefined}
+          title={jiraUrl ? undefined : 'JIRA_HOST not configured'}
+        >
           Open in Jira
-        </button>
+        </a>
         <div className="spacer" />
         <span style={{ fontSize: 11, color: 'var(--n-muted)' }}>{ticket.updatedAt ? new Date(ticket.updatedAt).toLocaleString() : ''}</span>
       </div>

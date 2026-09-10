@@ -2,8 +2,9 @@
 // properties (not raw hex) so every badge automatically follows the
 // light/dark theme rather than needing its own dark variant.
 export const PIPELINE_STATE_STYLES = {
+  staging_queued: { label: 'Awaiting staging merge', fg: 'var(--n-body)', bg: 'var(--n-fill-subtle)', border: 'var(--n-border-strong)', dashed: true },
   staging: { label: 'On staging', fg: 'var(--brand-hover)', bg: 'var(--brand-fill-selected)', border: 'var(--brand-border-light)', dashed: false },
-  queued: { label: 'Awaiting develop', fg: 'var(--n-body)', bg: 'var(--n-fill-subtle)', border: 'var(--n-border-strong)', dashed: true },
+  queued: { label: 'Awaiting production', fg: 'var(--n-body)', bg: 'var(--n-fill-subtle)', border: 'var(--n-border-strong)', dashed: true },
   develop: { label: 'Merged to develop', fg: 'var(--success-text)', bg: 'var(--success-fill)', border: 'var(--success)', dashed: false },
   conflict: { label: 'Merge conflict', fg: 'var(--danger)', bg: 'var(--danger-fill)', border: 'var(--danger-border)', dashed: true },
   rejected: { label: 'QA rejected', fg: 'var(--warning)', bg: 'var(--warning-fill)', border: 'var(--n-border-strong)', dashed: true },
@@ -36,5 +37,5 @@ export function checkStatusColor(checkStatus) {
 }
 
 export function isDashedState(state) {
-  return state === 'conflict' || state === 'rejected' || state === 'queued';
+  return state === 'conflict' || state === 'rejected' || state === 'queued' || state === 'staging_queued';
 }

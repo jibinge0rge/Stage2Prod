@@ -1,65 +1,66 @@
 const { OUTCOMES, PIPELINE_STATES, JIRA_COMMENTS, refKey } = require('../lib/constants');
 
-async function mergeToDevelopCore({ ticketKey, log, correlationId, trigger, repoOwner, repoName, productionBranch, github, jira, ticketsRepo, eventsRepo, ticketMatcher }) {
-  const pr = await ticketMatcher.findOpenPrForTicket(ticketKey, { base: productionBranch });
+/**
+ * Lock-free core: ensures a PR into production exists (reusing one a
+ * developer already opened, else creating one from the ticket's matched
+ * feature branch), but never merges it — see the note in toStaging.js.
+ * Status checks are still fetched and stored for display, but no longer
+ * gate anything here (they used to hold the auto-merge; now a human sees
+ * them in the ticket drawer before deciding to click Merge themselves).
+ */
+async function ensureDevelopPrCore({ ticketKey, log, correlationId, trigger, repoOwner, repoName, productionBranch, github, jira, ticketsRepo, eventsRepo, ticketMatcher }) {
+  let pr = await ticketMatcher.findOpenPrForTicket(ticketKey, { base: productionBranch });
+  let created = false;
+
   if (!pr) {
-    eventsRepo.insertEvent({
-      ticketKey,
-      trigger,
-      action: 'merge:develop',
-      outcome: OUTCOMES.NOTED,
-      title: 'No matching open PR found',
-      detail: `No open PR with base "${productionBranch}" found for ${ticketKey} in ${repoOwner}/${repoName}.`,
-      correlationId,
-      repoOwner,
-      repoName,
+    const branch = await ticketMatcher.findBranchForTicket(ticketKey);
+    if (!branch) {
+      eventsRepo.insertEvent({
+        ticketKey,
+        trigger,
+        action: 'pr:develop',
+        outcome: OUTCOMES.NOTED,
+        title: 'No matching branch or PR found',
+        detail: `No open PR with base "${productionBranch}" and no branch containing "${ticketKey}" was found in ${repoOwner}/${repoName}.`,
+        correlationId,
+        repoOwner,
+        repoName,
+      });
+      return { outcome: OUTCOMES.NOTED };
+    }
+    const result = await github.createPr({
+      base: productionBranch,
+      head: branch,
+      title: `${ticketKey}: merge to ${productionBranch}`,
+      body: `Auto-opened by Stage2Prod for ${ticketKey}. Merge from the Stage2Prod dashboard when ready.`,
     });
-    return { outcome: OUTCOMES.NOTED };
+    pr = { number: result.number, head: { ref: branch, sha: result.headSha } };
+    created = true;
   }
 
   ticketsRepo.setGithubFacts(ticketKey, { branchName: pr.head.ref, prNumber: pr.number, prState: 'open', headSha: pr.head.sha });
 
-  const status = await github.getCombinedStatus(pr.head.sha);
-  ticketsRepo.setGithubFacts(ticketKey, { checkStatus: status.overall });
-
-  if (status.overall !== 'passing') {
-    const reason = status.overall === 'failing' ? 'status checks are failing' : 'status checks are still pending';
-    await jira.addComment(ticketKey, `Develop merge held — ${reason} on PR #${pr.number}.`);
-    eventsRepo.insertEvent({
-      ticketKey,
-      trigger,
-      action: 'merge:develop',
-      outcome: OUTCOMES.HELD,
-      title: 'Held develop merge',
-      detail: `PR #${pr.number}: ${reason}`,
-      correlationId,
-      metadata: { prNumber: pr.number, checkStatus: status.overall },
-      repoOwner,
-      repoName,
-    });
-    log.info({ ticketKey, prNumber: pr.number, checkStatus: status.overall }, 'develop merge held');
-    return { outcome: OUTCOMES.HELD };
+  if (pr.head.sha) {
+    const status = await github.getCombinedStatus(pr.head.sha).catch(() => null);
+    if (status) ticketsRepo.setGithubFacts(ticketKey, { checkStatus: status.overall });
   }
 
-  const merged = await github.mergePr(pr.number, { mergeMethod: 'merge' });
-  await github.deleteRef(pr.head.ref);
-  await jira.addComment(ticketKey, JIRA_COMMENTS.DEVELOP_SUCCESS);
-  ticketsRepo.setPipelineState(ticketKey, PIPELINE_STATES.DEVELOP);
-  ticketsRepo.setGithubFacts(ticketKey, { prState: 'merged', headSha: merged.sha });
+  ticketsRepo.setPipelineState(ticketKey, PIPELINE_STATES.QUEUED);
+  await jira.addComment(ticketKey, JIRA_COMMENTS.DEVELOP_PR_OPENED(pr.number, productionBranch));
   eventsRepo.insertEvent({
     ticketKey,
     trigger,
-    action: 'merge:develop',
-    outcome: OUTCOMES.MERGED,
-    title: 'Merged into develop',
-    detail: `PR #${pr.number} merged as merge commit · remote branch deleted`,
+    action: 'pr:develop',
+    outcome: OUTCOMES.PR_OPENED,
+    title: created ? 'Opened PR into develop' : 'Found existing PR into develop',
+    detail: `PR #${pr.number} → ${productionBranch}`,
     correlationId,
-    metadata: { prNumber: pr.number, branch: pr.head.ref, sha: merged.sha },
+    metadata: { prNumber: pr.number, branch: pr.head.ref },
     repoOwner,
     repoName,
   });
-  log.info({ ticketKey, prNumber: pr.number }, 'merged into develop');
-  return { outcome: OUTCOMES.MERGED };
+  log.info({ ticketKey, prNumber: pr.number, created }, 'develop PR ensured');
+  return { outcome: OUTCOMES.PR_OPENED };
 }
 
 async function toDevelop({ event, log, correlationId, repoOwner, repoName, productionBranch, github, jira, ticketsRepo, eventsRepo, lockManager, ticketMatcher }) {
@@ -69,7 +70,7 @@ async function toDevelop({ event, log, correlationId, repoOwner, repoName, produ
     `toDevelop:${event.ticketKey}`,
     correlationId,
     () =>
-      mergeToDevelopCore({
+      ensureDevelopPrCore({
         ticketKey: event.ticketKey,
         log,
         correlationId,
@@ -86,4 +87,4 @@ async function toDevelop({ event, log, correlationId, repoOwner, repoName, produ
   );
 }
 
-module.exports = { toDevelop, mergeToDevelopCore };
+module.exports = { toDevelop, ensureDevelopPrCore };

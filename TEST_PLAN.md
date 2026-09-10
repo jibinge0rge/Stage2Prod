@@ -36,11 +36,16 @@ Legend: ✅ expected result — check it actually happened, don't just check "no
    - ✅ Badge updates immediately; sidebar "Branch model" legend and repo selector stay in sync.
 6. [ ] Go to **Rules & polling** → **JQL watched** box.
    - ✅ Once a project key is set on at least one repo, this shows
-     `project in ("TEST") AND status CHANGED AFTER -5m ORDER BY updated ASC` (not the old static default).
+     `project in ("TEST") AND (statusCategory != Done OR updated >= -15m) ORDER BY updated ASC` (not the old static default).
 
 ---
 
 ## 2. Full ticket lifecycle (core workflow)
+
+**Merging is now always a manual click.** Every status transition below only ever gets Stage2Prod as far as
+*opening a PR* and posting a Jira comment saying so — the actual GitHub merge happens only when you click
+**Merge** in the ticket drawer (see §2a). Nothing here should land a real commit on `staging` or `develop`
+without that explicit click.
 
 Pick or create a Jira issue in your test project with a matching feature branch already pushed to the repo
 (branch name containing the ticket key, e.g. `feat/TEST-101-something`), or create the branch after step 1.
@@ -51,35 +56,82 @@ Pick or create a Jira issue in your test project with a matching feature branch 
    - ✅ Ticket appears on **Ticket pipeline** as `unmerged`. **No git action** — Event log shows a `NOTED`
      entry, not a merge.
 2. [ ] Move it to **Ready for QA** (or **In QA**).
-   - ✅ Within one poll interval: feature branch is merged into the staging branch on GitHub (check GitHub
-     directly). Pipeline state becomes `staging`. Event log shows a `MERGED` / `merge:staging` entry. A
-     comment appears on the Jira ticket.
-   - ✅ **Overview** → branch board's staging column now lists this ticket.
-3. [ ] Move it to **Approved** (or **Ready for Release** / **Done**).
-   - ✅ The PR (or branch) is merged into the production branch as a merge commit (never squashed), and the
-     remote feature branch is deleted. Pipeline state becomes `develop`. Event log shows `MERGED` /
-     `merge:develop`. A comment appears on Jira.
+   - ✅ Within one poll interval: a **PR** (not a direct merge) opens from the feature branch into the
+     staging branch on GitHub — check GitHub directly, it should be an open, unmerged PR. Pipeline state
+     becomes `staging_queued` ("Awaiting staging merge"). Event log shows a `PR_OPENED` / `pr:staging`
+     entry, **not** `MERGED`. A comment appears on the Jira ticket saying a PR was opened.
+   - ✅ **Overview** → branch board's staging column lists this ticket as awaiting merge, not as already on
+     staging.
+3. [ ] Open the ticket drawer and click **Merge PR into staging** (see §2a for the full drawer walkthrough).
+   - ✅ *Now* the PR actually merges on GitHub. Pipeline state becomes `staging`. Event log shows `MERGED` /
+     `merge:staging`. The feature branch is **not** deleted (still needed for the develop PR next).
+4. [ ] Move it to **Approved** (or **Ready for Release** / **Done**).
+   - ✅ A PR opens into the production branch (or an already-existing one is reused) — again, not merged yet.
+     Pipeline state becomes `queued` ("Awaiting production"). Event log shows `PR_OPENED` / `pr:develop`. Status
+     checks (if any) are shown in the drawer's GitHub panel but don't block anything at this stage.
+5. [ ] Click **Merge PR into develop** in the drawer.
+   - ✅ The PR merges as a merge commit (never squashed), and the remote feature branch **is** deleted this
+     time. Pipeline state becomes `develop`. Event log shows `MERGED` / `merge:develop`. A comment appears on
+     Jira.
    - ✅ **Overview** → branch board's production column lists this ticket; "Merged today" KPI increments.
-4. [ ] Pick a second ticket, move it straight to **QA Failed** (skip staging).
+6. [ ] Pick a second ticket, move it straight to **QA Failed** (skip staging).
    - ✅ No git action taken. PR gets labelled `qa-rejected` on GitHub. A comment appears on Jira. Pipeline
      state becomes `rejected`. Ticket pipeline shows it clearly as rejected, not silently dropped.
-5. [ ] Move a ticket to a status **not** in the mapping table (e.g. back to **In Development** after being on
+7. [ ] Move a ticket to a status **not** in the mapping table (e.g. back to **In Development** after being on
        staging).
    - ✅ No git action; last-seen status still updates so the same transition doesn't re-fire next poll.
 
+## 2a. In-app ticket actions (drawer)
+
+Open any ticket from **Ticket pipeline** to get its drawer.
+
+1. [ ] **Transition Jira status** — use the "Move to…" dropdown (populated from that ticket's real available
+       Jira transitions).
+   - ✅ The real Jira issue's status changes immediately (check in Jira). The dashboard doesn't wait for the
+     next scheduled poll — it should reflect any resulting PR-open within a second or two (an out-of-cycle
+     poll runs right after the transition).
+2. [ ] **Comment on Jira** — type something in the box, click **Post comment**.
+   - ✅ Comment appears on the real Jira issue.
+3. [ ] **Merge** button — only appears when pipeline state is "Awaiting staging merge" or "Awaiting production"
+       (i.e. a PR is actually open). Click it.
+   - ✅ See §2 steps 3/5 for the expected effect. If you click it when there's genuinely nothing to merge
+     (shouldn't be reachable via the UI, but worth confirming), it's rejected with a clear error, not a crash.
+4. [ ] **Open in Jira** — click it.
+   - ✅ Opens the real ticket at `https://<your Jira host>/browse/<KEY>` in a new tab (only enabled once
+     `JIRA_HOST` is configured in `.env`).
+
 ---
 
+## 2b. Full open-ticket backlog
+
+1. [ ] In Jira, find (or leave) an issue in your test project that's open but hasn't changed status
+       recently, and that Stage2Prod has never polled before (or restart the backend with a fresh
+       `data/*.db` to be sure).
+   - ✅ It shows up on **Ticket pipeline** anyway — Stage2Prod no longer only shows tickets that recently
+     transitioned. Its pipeline state is whatever's appropriate for its current status (likely `unmerged`),
+     not blank/missing.
+   - ✅ No spurious action was taken on it (check Event log) — seeing an old ticket for the first time must
+     never look like a fresh transition and trigger a PR-open.
+2. [ ] Use the search box (ticket key, branch, summary, or repo) and confirm it filters across this fuller
+       list, not just recently-active tickets.
+
 ## 3. Conflict handling
+
+Conflict detection now happens at **merge time**, not when the PR is opened — GitHub will happily create a
+PR that can't merge cleanly, it just refuses the merge itself.
 
 1. [ ] Create a feature branch whose merge into staging will conflict (edit the same file/line staging
        already has changes on).
 2. [ ] Move that ticket to **Ready for QA**.
-   - ✅ GitHub returns a merge conflict; Stage2Prod does **not** attempt to auto-resolve it. Pipeline state
-     becomes `conflict`. Event log shows a `CONFLICT` outcome. Jira gets a comment saying so and (if
-     configured) transitions to a "Needs Attention"-style status.
+   - ✅ A PR still opens successfully (GitHub allows creating a non-mergeable PR). Pipeline state is
+     `staging_queued`, same as any other PR-opened ticket — no conflict is reported yet.
+3. [ ] Open the drawer and click **Merge PR into staging**.
+   - ✅ *This* is where it fails: Stage2Prod does **not** attempt to auto-resolve it. Pipeline state becomes
+     `conflict`. Event log shows a `CONFLICT` outcome. Jira gets a comment saying the PR can't merge cleanly.
+     The drawer surfaces a clear error, not a raw GitHub error.
    - ✅ **Overview** shows the red **Conflicts** KPI and conflict banner; ticket pipeline flags it.
-3. [ ] Resolve the conflict manually in GitHub, or discard by resetting staging (see §4), and confirm the
-       ticket can proceed normally afterward.
+4. [ ] Resolve the conflict manually in GitHub (or discard by resetting staging, see §4), then click **Merge**
+       again from the drawer and confirm it now succeeds.
 
 ---
 
@@ -89,8 +141,10 @@ Pick or create a Jira issue in your test project with a matching feature branch 
 2. [ ] Click **Reset staging to `<production>`**, confirm in the modal (toggle "re-merge tickets in QA" on
        or off to test both).
    - ✅ Staging branch is force-updated to production's current SHA (deleting anything unmerged that was only
-     on staging). If re-merge was on, every ticket still "In QA" in Jira gets re-merged in sequence — check
-     Event log for a `RESET` entry plus one `merge:staging` entry per re-merged ticket.
+     on staging). If re-merge was on, every ticket still "In QA" in Jira gets a **staging PR re-opened** in
+     sequence (not auto-merged — same manual-merge rule as everywhere else) — check Event log for a `RESET`
+     entry plus one `PR_OPENED` / `pr:staging` entry per ticket, landing each in `staging_queued`. You still
+     need to click **Merge** per ticket afterward if you want them actually back on staging.
    - ✅ Rejected/staging-state tickets from before the reset flip back to `unmerged` (not silently left
      pointing at a branch reference that no longer exists on staging).
 

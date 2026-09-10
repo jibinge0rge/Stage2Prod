@@ -1,5 +1,6 @@
 const OUTCOMES = Object.freeze({
   MERGED: 'MERGED',
+  PR_OPENED: 'PR_OPENED',
   CONFLICT: 'CONFLICT',
   HELD: 'HELD',
   NOTED: 'NOTED',
@@ -8,8 +9,9 @@ const OUTCOMES = Object.freeze({
 });
 
 const PIPELINE_STATES = Object.freeze({
+  STAGING_QUEUED: 'staging_queued', // PR opened into staging, awaiting a human to click Merge
   STAGING: 'staging',
-  QUEUED: 'queued',
+  QUEUED: 'queued', // PR opened into production, awaiting a human to click Merge
   DEVELOP: 'develop',
   CONFLICT: 'conflict',
   REJECTED: 'rejected',
@@ -17,8 +19,13 @@ const PIPELINE_STATES = Object.freeze({
 });
 
 const JIRA_COMMENTS = Object.freeze({
-  STAGING_CONFLICT: 'Automated merge to staging failed due to merge conflicts with current staging branch. Please resolve locally.',
+  STAGING_PR_OPENED: (prNumber, stagingBranch) =>
+    `Pull request #${prNumber} opened into \`${stagingBranch}\`. Merge it from Stage2Prod when you're ready.`,
+  STAGING_CONFLICT: 'This pull request cannot be merged into staging cleanly. Please resolve the conflict on GitHub, then merge from Stage2Prod again.',
   STAGING_SUCCESS: 'Merged into `staging` successfully. Ready for validation.',
+  DEVELOP_PR_OPENED: (prNumber, productionBranch) =>
+    `Pull request #${prNumber} opened into \`${productionBranch}\`. Merge it from Stage2Prod when you're ready.`,
+  DEVELOP_CONFLICT: 'This pull request cannot be merged into production cleanly. Please resolve the conflict on GitHub, then merge from Stage2Prod again.',
   DEVELOP_SUCCESS: 'Merged into `develop` and branch deleted.',
   REJECTED: 'Feature rejected. Branch remains unmerged into develop.',
 });

@@ -1,4 +1,7 @@
 const express = require('express');
+const { requireApiToken } = require('../middleware/auth');
+const { newCorrelationId } = require('../lib/correlationId');
+const { mergeOpenPr, MergeNotReadyError } = require('../services/mergeOpenPr');
 
 function rowToApi(row, reposRepo) {
   let repo = null;
@@ -29,7 +32,7 @@ function rowToApi(row, reposRepo) {
   };
 }
 
-function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo }) {
+function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller, repoResolver, lockManager, logger }) {
   const router = express.Router();
 
   router.get('/tickets', (req, res) => {
@@ -57,6 +60,91 @@ function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo }) {
     const row = ticketsRepo.get(req.params.key);
     if (!row) return res.status(404).json({ error: 'not_found', message: `no ticket ${req.params.key}` });
     return res.json({ ...rowToApi(row, reposRepo), timeline: eventsRepo.timelineForTicket(req.params.key) });
+  });
+
+  router.get('/tickets/:key/transitions', async (req, res, next) => {
+    if (!ticketsRepo.get(req.params.key)) {
+      return res.status(404).json({ error: 'not_found', message: `no ticket ${req.params.key}` });
+    }
+    try {
+      const transitions = await jira.getTransitions(req.params.key);
+      res.json({ transitions: transitions.map((t) => ({ id: t.id, name: t.name })) });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.post('/tickets/:key/transition', requireApiToken, async (req, res, next) => {
+    const { key } = req.params;
+    const { name } = req.body || {};
+    if (!ticketsRepo.get(key)) return res.status(404).json({ error: 'not_found', message: `no ticket ${key}` });
+    if (!name) return res.status(400).json({ error: 'bad_request', message: '"name" (target status) is required' });
+    try {
+      const result = await jira.transition(key, name);
+      if (!result.transitioned) {
+        return res.status(400).json({ error: 'bad_request', message: `transition "${name}" is not available for ${key}` });
+      }
+      // Reflects the transition's effect (e.g. a PR opening) right away
+      // instead of waiting up to POLL_INTERVAL_MS for the next tick.
+      await poller.pollNow();
+      const row = ticketsRepo.get(key);
+      return res.json(rowToApi(row, reposRepo));
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+  router.post('/tickets/:key/comment', requireApiToken, async (req, res, next) => {
+    const { key } = req.params;
+    const { text } = req.body || {};
+    if (!ticketsRepo.get(key)) return res.status(404).json({ error: 'not_found', message: `no ticket ${key}` });
+    if (!text || !text.trim()) return res.status(400).json({ error: 'bad_request', message: '"text" is required' });
+    try {
+      await jira.addComment(key, text);
+      return res.status(201).json({ commented: true });
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+  router.post('/tickets/:key/merge', requireApiToken, async (req, res, next) => {
+    const { key } = req.params;
+    const row = ticketsRepo.get(key);
+    if (!row) return res.status(404).json({ error: 'not_found', message: `no ticket ${key}` });
+    if (!row.repo_owner) {
+      return res.status(400).json({ error: 'bad_request', message: 'ticket has no resolved repo yet' });
+    }
+    const repoConfig = reposRepo.get(row.repo_owner, row.repo_name);
+    if (!repoConfig) {
+      return res.status(400).json({ error: 'bad_request', message: `${row.repo_owner}/${row.repo_name} is not a watched repo` });
+    }
+    const correlationId = newCorrelationId();
+    try {
+      await mergeOpenPr({
+        ticketKey: key,
+        repoOwner: row.repo_owner,
+        repoName: row.repo_name,
+        productionBranch: repoConfig.productionBranch,
+        stagingBranch: repoConfig.stagingBranch,
+        github: repoResolver.getClient(row.repo_owner, row.repo_name),
+        jira,
+        ticketsRepo,
+        eventsRepo,
+        lockManager,
+        log: logger.child({ correlationId, ticketKey: key }),
+        correlationId,
+      });
+      const updated = ticketsRepo.get(key);
+      return res.json(rowToApi(updated, reposRepo));
+    } catch (err) {
+      if (err instanceof MergeNotReadyError || err.status === 400) {
+        return res.status(400).json({ error: 'bad_request', message: err.message });
+      }
+      if (err.status === 409) {
+        return res.status(409).json({ error: 'conflict', message: err.message });
+      }
+      return next(err);
+    }
   });
 
   return router;

@@ -1,12 +1,18 @@
 const request = require('supertest');
 const { createApp } = require('../../src/app');
-const { createTestDb } = require('../setup');
+const { createTestDb, noopLogger } = require('../setup');
 const { config } = require('../../src/config');
 
-function buildTestCtx() {
+function buildTestCtx(overrides = {}) {
   const { ticketsRepo, eventsRepo, cursorRepo, lockManager, reposRepo } = createTestDb();
-  const poller = { isRunning: () => true, nextPollAt: null };
-  return { config, ticketsRepo, eventsRepo, cursorRepo, lockManager, reposRepo, poller };
+  const poller = { isRunning: () => true, nextPollAt: null, pollNow: vi.fn().mockResolvedValue(undefined) };
+  const jira = {
+    getTransitions: vi.fn().mockResolvedValue([{ id: '1', name: 'Ready for QA' }, { id: '2', name: 'Done' }]),
+    transition: vi.fn().mockResolvedValue({ transitioned: true }),
+    addComment: vi.fn().mockResolvedValue({ commented: true }),
+  };
+  const repoResolver = { getClient: vi.fn(() => ({})) };
+  return { config, ticketsRepo, eventsRepo, cursorRepo, lockManager, reposRepo, poller, jira, repoResolver, logger: noopLogger, ...overrides };
 }
 
 describe('GET /api/tickets', () => {
@@ -62,5 +68,160 @@ describe('GET /api/tickets', () => {
     const app = createApp(ctx);
     const res = await request(app).get('/api/tickets/NOPE-1');
     expect(res.status).toBe(404);
+  });
+});
+
+describe('GET /api/tickets/:key/transitions', () => {
+  it('returns the available Jira transitions for the ticket', async () => {
+    const ctx = buildTestCtx();
+    ctx.ticketsRepo.upsert({ key: 'PROJ-1', jiraStatus: 'In Development', pipelineState: 'unmerged' });
+    const app = createApp(ctx);
+
+    const res = await request(app).get('/api/tickets/PROJ-1/transitions');
+    expect(res.status).toBe(200);
+    expect(res.body.transitions).toEqual([{ id: '1', name: 'Ready for QA' }, { id: '2', name: 'Done' }]);
+  });
+
+  it('404s for an unknown ticket', async () => {
+    const app = createApp(buildTestCtx());
+    const res = await request(app).get('/api/tickets/NOPE-1/transitions');
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('POST /api/tickets/:key/transition', () => {
+  it('401s without a bearer token', async () => {
+    const ctx = buildTestCtx();
+    ctx.ticketsRepo.upsert({ key: 'PROJ-1', jiraStatus: 'In Development', pipelineState: 'unmerged' });
+    const app = createApp(ctx);
+    const res = await request(app).post('/api/tickets/PROJ-1/transition').send({ name: 'Done' });
+    expect(res.status).toBe(401);
+  });
+
+  it('transitions the ticket in Jira and triggers an immediate poll so the effect shows up right away', async () => {
+    const ctx = buildTestCtx();
+    ctx.ticketsRepo.upsert({ key: 'PROJ-1', jiraStatus: 'In Development', pipelineState: 'unmerged' });
+    const app = createApp(ctx);
+
+    const res = await request(app)
+      .post('/api/tickets/PROJ-1/transition')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send({ name: 'Done' });
+
+    expect(res.status).toBe(200);
+    expect(ctx.jira.transition).toHaveBeenCalledWith('PROJ-1', 'Done');
+    expect(ctx.poller.pollNow).toHaveBeenCalledTimes(1);
+  });
+
+  it('400s when Jira reports the transition is not available', async () => {
+    const ctx = buildTestCtx({ jira: { transition: vi.fn().mockResolvedValue({ transitioned: false }), getTransitions: vi.fn(), addComment: vi.fn() } });
+    ctx.ticketsRepo.upsert({ key: 'PROJ-1', jiraStatus: 'In Development', pipelineState: 'unmerged' });
+    const app = createApp(ctx);
+
+    const res = await request(app)
+      .post('/api/tickets/PROJ-1/transition')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send({ name: 'Not A Real Status' });
+
+    expect(res.status).toBe(400);
+    expect(ctx.poller.pollNow).not.toHaveBeenCalled();
+  });
+
+  it('400s when "name" is missing', async () => {
+    const ctx = buildTestCtx();
+    ctx.ticketsRepo.upsert({ key: 'PROJ-1', jiraStatus: 'In Development', pipelineState: 'unmerged' });
+    const app = createApp(ctx);
+
+    const res = await request(app)
+      .post('/api/tickets/PROJ-1/transition')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send({});
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('POST /api/tickets/:key/comment', () => {
+  it('401s without a bearer token', async () => {
+    const ctx = buildTestCtx();
+    ctx.ticketsRepo.upsert({ key: 'PROJ-1', jiraStatus: 'In Development', pipelineState: 'unmerged' });
+    const app = createApp(ctx);
+    const res = await request(app).post('/api/tickets/PROJ-1/comment').send({ text: 'hi' });
+    expect(res.status).toBe(401);
+  });
+
+  it('posts a comment to Jira', async () => {
+    const ctx = buildTestCtx();
+    ctx.ticketsRepo.upsert({ key: 'PROJ-1', jiraStatus: 'In Development', pipelineState: 'unmerged' });
+    const app = createApp(ctx);
+
+    const res = await request(app)
+      .post('/api/tickets/PROJ-1/comment')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send({ text: 'Looks good' });
+
+    expect(res.status).toBe(201);
+    expect(ctx.jira.addComment).toHaveBeenCalledWith('PROJ-1', 'Looks good');
+  });
+
+  it('400s when text is missing or blank', async () => {
+    const ctx = buildTestCtx();
+    ctx.ticketsRepo.upsert({ key: 'PROJ-1', jiraStatus: 'In Development', pipelineState: 'unmerged' });
+    const app = createApp(ctx);
+
+    const res = await request(app)
+      .post('/api/tickets/PROJ-1/comment')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send({ text: '   ' });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('POST /api/tickets/:key/merge', () => {
+  it('401s without a bearer token', async () => {
+    const app = createApp(buildTestCtx());
+    const res = await request(app).post('/api/tickets/PROJ-1/merge').send({});
+    expect(res.status).toBe(401);
+  });
+
+  it('404s for an unknown ticket', async () => {
+    const app = createApp(buildTestCtx());
+    const res = await request(app)
+      .post('/api/tickets/NOPE-1/merge')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send({});
+    expect(res.status).toBe(404);
+  });
+
+  it('400s when the ticket has nothing awaiting merge', async () => {
+    const ctx = buildTestCtx();
+    ctx.reposRepo.add('acme', 'widgets');
+    ctx.ticketsRepo.upsert({ key: 'PROJ-1', jiraStatus: 'In Development', pipelineState: 'unmerged', repoOwner: 'acme', repoName: 'widgets' });
+    const app = createApp(ctx);
+
+    const res = await request(app)
+      .post('/api/tickets/PROJ-1/merge')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send({});
+    expect(res.status).toBe(400);
+  });
+
+  it('merges the open staging PR and returns the updated ticket', async () => {
+    const ctx = buildTestCtx();
+    ctx.reposRepo.add('acme', 'widgets', { productionBranch: 'main', stagingBranch: 'qa' });
+    ctx.ticketsRepo.upsert({ key: 'PROJ-1', jiraStatus: 'In QA', pipelineState: 'staging_queued', repoOwner: 'acme', repoName: 'widgets' });
+    ctx.ticketsRepo.setGithubFacts('PROJ-1', { prNumber: 7, branchName: 'feat/PROJ-1-thing' });
+    const github = { mergePr: vi.fn().mockResolvedValue({ merged: true, sha: 'sha1' }), deleteRef: vi.fn() };
+    ctx.repoResolver.getClient = vi.fn(() => github);
+    const app = createApp(ctx);
+
+    const res = await request(app)
+      .post('/api/tickets/PROJ-1/merge')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send({});
+
+    expect(res.status).toBe(200);
+    expect(res.body.pipelineState).toBe('staging');
+    expect(github.mergePr).toHaveBeenCalledWith(7, { mergeMethod: 'merge' });
+    expect(github.deleteRef).not.toHaveBeenCalled();
   });
 });

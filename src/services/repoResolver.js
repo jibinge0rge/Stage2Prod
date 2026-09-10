@@ -23,6 +23,27 @@ function createRepoResolver({ reposRepo, githubRegistry }) {
   }
 
   /**
+   * Cheap, synchronous, no-GitHub-calls repo lookup by Jira project key
+   * alone — every active repo sharing the ticket's project key. Exposed
+   * separately from resolveTicket so the poller can tag a ticket with its
+   * repo as soon as it's ever seen (visibility), not only once a status
+   * transition actually gets processed.
+   */
+  function matchReposByProjectKey(ticketKey, activeRepos = reposRepo.list({ activeOnly: true })) {
+    const projectKey = projectKeyFromTicket(ticketKey);
+    return activeRepos.filter((r) => r.jiraProjectKey === projectKey);
+  }
+
+  /**
+   * Unambiguous project-key-only match, or null (no match, or 2+ repos
+   * share the key — genuinely ambiguous without a branch/PR search).
+   */
+  function matchByProjectKeyOnly(ticketKey) {
+    const matches = matchReposByProjectKey(ticketKey);
+    return matches.length === 1 ? { owner: matches[0].owner, name: matches[0].name } : null;
+  }
+
+  /**
    * @param ticketKey Jira ticket key, e.g. "PROJ-101"
    * @param knownRepo {owner, name} | null — the ticket's previously
    *   resolved repo, if any. Reused as-is unless it's no longer watched.
@@ -42,8 +63,7 @@ function createRepoResolver({ reposRepo, githubRegistry }) {
     // than one (e.g. a monorepo split across GitHub repos sharing one
     // Jira project), narrow the branch/PR search to just those instead
     // of searching every watched repo.
-    const projectKey = projectKeyFromTicket(ticketKey);
-    const byProjectKey = activeRepos.filter((r) => r.jiraProjectKey === projectKey);
+    const byProjectKey = matchReposByProjectKey(ticketKey, activeRepos);
     if (byProjectKey.length === 1) {
       return { found: true, owner: byProjectKey[0].owner, name: byProjectKey[0].name };
     }
@@ -70,6 +90,7 @@ function createRepoResolver({ reposRepo, githubRegistry }) {
 
   return {
     resolveTicket,
+    matchByProjectKeyOnly,
     invalidateAll,
     getClient: githubRegistry.getClient,
     getMatcher,

@@ -74,7 +74,7 @@ export default function Overview() {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(160px,1fr))', gap: 12 }}>
         <KpiTile label="On staging" value={onStaging.length} caption="tickets awaiting QA validation" />
-        <KpiTile label="Awaiting develop" value={awaitingDevelop.length} caption="QA passed, PR ready to merge" />
+        <KpiTile label="Awaiting production" value={awaitingDevelop.length} caption="QA passed, PR ready to merge" />
         <KpiTile
           label="Conflicts"
           value={conflicts.length}

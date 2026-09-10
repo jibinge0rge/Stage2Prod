@@ -1,14 +1,15 @@
 const { OUTCOMES, PIPELINE_STATES, refKey } = require('../lib/constants');
-const { mergeToStagingCore } = require('../handlers/toStaging');
+const { ensureStagingPrCore } = require('../handlers/toStaging');
 
 /**
  * POST /api/staging/reset core logic, scoped to one repo (owner/name).
  * Takes that repo's staging lock non-blocking (409s immediately if a
  * poller-driven merge is mid-flight) then force-updates the repo's
  * staging branch to its production branch's current head, and
- * optionally re-merges every ticket currently "In QA" in that repo back
- * into the fresh branch, sequentially, reusing the lock-free merge core
- * since the lock is already held here.
+ * optionally re-opens a staging PR for every ticket currently "In QA" in
+ * that repo, sequentially, reusing the lock-free "ensure PR" core since
+ * the lock is already held here — still needs a manual Merge click per
+ * ticket, same as the normal flow.
  */
 async function resetStaging({ owner, name, productionBranch, stagingBranch, remergeInQa, correlationId, log, github, jira, ticketsRepo, eventsRepo, lockManager, ticketMatcher }) {
   return lockManager.withLockOrReject(refKey(owner, name, `refs/heads/${stagingBranch}`), 'staging-reset', correlationId, async () => {
@@ -43,7 +44,7 @@ async function resetStaging({ owner, name, productionBranch, stagingBranch, reme
         .filter((t) => t.repo_owner === owner && t.repo_name === name);
       for (const t of inQaTickets) {
         // eslint-disable-next-line no-await-in-loop
-        const result = await mergeToStagingCore({
+        const result = await ensureStagingPrCore({
           ticketKey: t.ticket_key,
           log,
           correlationId,

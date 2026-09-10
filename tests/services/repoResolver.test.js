@@ -114,6 +114,29 @@ describe('repoResolver', () => {
     expect(result).toEqual({ found: true, owner: 'acme', name: 'widgets' });
   });
 
+  it('matchByProjectKeyOnly returns the single repo sharing that project key, with no GitHub calls', () => {
+    const { resolver, reposRepo } = buildResolver({ 'acme/widgets': branchGithub(['main']) });
+    reposRepo.add('acme', 'widgets', { jiraProjectKey: 'SCRUM' });
+
+    const result = resolver.matchByProjectKeyOnly('SCRUM-1');
+    expect(result).toEqual({ owner: 'acme', name: 'widgets' });
+  });
+
+  it('matchByProjectKeyOnly returns null when no repo has that project key', () => {
+    const { resolver, reposRepo } = buildResolver({});
+    reposRepo.add('acme', 'widgets', { jiraProjectKey: 'OTHER' });
+
+    expect(resolver.matchByProjectKeyOnly('SCRUM-1')).toBeNull();
+  });
+
+  it('matchByProjectKeyOnly returns null when 2+ repos share the project key (genuinely ambiguous)', () => {
+    const { resolver, reposRepo } = buildResolver({});
+    reposRepo.add('acme', 'widgets', { jiraProjectKey: 'SCRUM' });
+    reposRepo.add('acme', 'other', { jiraProjectKey: 'SCRUM' });
+
+    expect(resolver.matchByProjectKeyOnly('SCRUM-1')).toBeNull();
+  });
+
   it('invalidateAll() clears every per-repo matcher cache', async () => {
     const client = branchGithub(['feat/PROJ-1-thing']);
     const { resolver, reposRepo } = buildResolver({ 'acme/widgets': client });

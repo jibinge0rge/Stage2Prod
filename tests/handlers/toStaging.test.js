@@ -7,14 +7,14 @@ function baseDeps(overrides = {}) {
   seedTicket(ticketsRepo, { key: 'PROJ-1', jiraStatus: 'In QA' });
 
   const github = {
-    createMerge: vi.fn().mockResolvedValue({ conflict: false, sha: 'abc1234def' }),
+    createPr: vi.fn().mockResolvedValue({ number: 42, htmlUrl: 'https://x/42', headSha: 'headsha1' }),
   };
   const jira = {
     addComment: vi.fn().mockResolvedValue({ commented: true }),
-    tryTransition: vi.fn().mockResolvedValue({ transitioned: false }),
   };
   const ticketMatcher = {
     findBranchForTicket: vi.fn().mockResolvedValue('feat/PROJ-1-thing'),
+    findOpenPrForTicket: vi.fn().mockResolvedValue(null),
   };
 
   return {
@@ -37,33 +37,37 @@ function baseDeps(overrides = {}) {
 }
 
 describe('toStaging handler', () => {
-  it('merges the feature branch into the repo\'s configured staging branch and comments success on Jira', async () => {
+  it('opens a PR from the feature branch into the configured staging branch, but does not merge it', async () => {
     const deps = baseDeps();
     const result = await toStaging(deps);
 
-    expect(result.outcome).toBe(OUTCOMES.MERGED);
-    expect(deps.github.createMerge).toHaveBeenCalledWith({ base: 'qa', head: 'feat/PROJ-1-thing' });
-    expect(deps.jira.addComment).toHaveBeenCalledWith('PROJ-1', expect.stringContaining('staging'));
-    expect(deps.ticketsRepo.get('PROJ-1').pipeline_state).toBe(PIPELINE_STATES.STAGING);
+    expect(result.outcome).toBe(OUTCOMES.PR_OPENED);
+    expect(deps.ticketMatcher.findOpenPrForTicket).toHaveBeenCalledWith('PROJ-1', { base: 'qa' });
+    expect(deps.github.createPr).toHaveBeenCalledWith({
+      base: 'qa',
+      head: 'feat/PROJ-1-thing',
+      title: expect.any(String),
+      body: expect.any(String),
+    });
+    expect(deps.jira.addComment).toHaveBeenCalledWith('PROJ-1', expect.stringContaining('qa'));
+    const row = deps.ticketsRepo.get('PROJ-1');
+    expect(row.pipeline_state).toBe(PIPELINE_STATES.STAGING_QUEUED);
+    expect(row.pr_number).toBe(42);
 
     const { events } = deps.eventsRepo.list({ ticketKey: 'PROJ-1' });
-    expect(events[0].outcome).toBe(OUTCOMES.MERGED);
+    expect(events[0].outcome).toBe(OUTCOMES.PR_OPENED);
     expect(events[0].repo).toEqual({ owner: 'acme', name: 'widgets' });
   });
 
-  it('on 409 conflict, comments the conflict message, attempts a transition, and records CONFLICT', async () => {
+  it('reuses an already-open PR instead of creating a duplicate', async () => {
     const deps = baseDeps();
-    deps.github.createMerge = vi.fn().mockResolvedValue({ conflict: true, sha: null });
+    deps.ticketMatcher.findOpenPrForTicket = vi.fn().mockResolvedValue({ number: 7, head: { ref: 'feat/PROJ-1-thing' } });
 
     const result = await toStaging(deps);
 
-    expect(result.outcome).toBe(OUTCOMES.CONFLICT);
-    expect(deps.jira.addComment).toHaveBeenCalledWith('PROJ-1', expect.stringContaining('conflicts'));
-    expect(deps.jira.tryTransition).toHaveBeenCalledWith('PROJ-1', 'Needs Attention');
-    expect(deps.ticketsRepo.get('PROJ-1').pipeline_state).toBe(PIPELINE_STATES.CONFLICT);
-
-    const { events } = deps.eventsRepo.list({ ticketKey: 'PROJ-1' });
-    expect(events[0].outcome).toBe(OUTCOMES.CONFLICT);
+    expect(result.outcome).toBe(OUTCOMES.PR_OPENED);
+    expect(deps.github.createPr).not.toHaveBeenCalled();
+    expect(deps.ticketsRepo.get('PROJ-1').pr_number).toBe(7);
   });
 
   it('records NOTED and makes no GitHub/Jira calls when no branch matches the ticket', async () => {
@@ -73,42 +77,46 @@ describe('toStaging handler', () => {
     const result = await toStaging(deps);
 
     expect(result.outcome).toBe(OUTCOMES.NOTED);
-    expect(deps.github.createMerge).not.toHaveBeenCalled();
+    expect(deps.github.createPr).not.toHaveBeenCalled();
     expect(deps.jira.addComment).not.toHaveBeenCalled();
   });
 
-  it('serializes two concurrent staging merges in the same repo via the ref lock', async () => {
+  it('serializes two concurrent staging PR-opens in the same repo via the ref lock', async () => {
     const deps = baseDeps();
     const order = [];
-    deps.github.createMerge = vi.fn().mockImplementation(async () => {
-      order.push('merge-start');
+    deps.github.createPr = vi.fn().mockImplementation(async () => {
+      order.push('open-start');
       await new Promise((r) => setTimeout(r, 20));
-      order.push('merge-end');
-      return { conflict: false, sha: 'sha1' };
+      order.push('open-end');
+      return { number: 1, htmlUrl: 'https://x/1', headSha: 'sha1' };
     });
 
     const other = { ...deps, event: { ticketKey: 'PROJ-1', newStatus: 'In QA' } };
     await Promise.all([toStaging(deps), toStaging(other)]);
 
-    expect(order).toEqual(['merge-start', 'merge-end', 'merge-start', 'merge-end']);
+    expect(order).toEqual(['open-start', 'open-end', 'open-start', 'open-end']);
   });
 
-  it('does NOT serialize concurrent staging merges across two different repos', async () => {
+  it('does NOT serialize concurrent staging PR-opens across two different repos', async () => {
     const deps = baseDeps();
     const order = [];
-    const slowMerge = async (label) => {
+    const slowOpen = async (label) => {
       order.push(`${label}-start`);
       await new Promise((r) => setTimeout(r, 20));
       order.push(`${label}-end`);
-      return { conflict: false, sha: 'sha1' };
+      return { number: 1, htmlUrl: 'https://x/1', headSha: 'sha1' };
     };
-    deps.github.createMerge = vi.fn(() => slowMerge('a'));
+    deps.github.createPr = vi.fn(() => slowOpen('a'));
 
     const otherRepoDeps = {
       ...deps,
       repoOwner: 'other',
       repoName: 'repo',
-      github: { createMerge: vi.fn(() => slowMerge('b')) },
+      github: { createPr: vi.fn(() => slowOpen('b')) },
+      ticketMatcher: {
+        findBranchForTicket: vi.fn().mockResolvedValue('feat/PROJ-1-thing'),
+        findOpenPrForTicket: vi.fn().mockResolvedValue(null),
+      },
     };
 
     await Promise.all([toStaging(deps), toStaging(otherRepoDeps)]);

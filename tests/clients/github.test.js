@@ -77,4 +77,22 @@ describe('GitHubClient', () => {
     const result = await client.listCommitsAhead('develop', 'staging');
     expect(result).toEqual([]);
   });
+
+  it('createPr posts base/head/title/body and returns number, htmlUrl, headSha', async () => {
+    nock(BASE)
+      .post('/repos/acme/widgets/pulls', { base: 'staging', head: 'feat/x', title: 't', body: 'b' })
+      .reply(201, { number: 5, html_url: 'https://github.com/acme/widgets/pull/5', head: { sha: 'headsha1' } });
+
+    const result = await client.createPr({ base: 'staging', head: 'feat/x', title: 't', body: 'b' });
+    expect(result).toEqual({ number: 5, htmlUrl: 'https://github.com/acme/widgets/pull/5', headSha: 'headsha1' });
+  });
+
+  it('getPr returns mergeable/mergeableState/merged', async () => {
+    nock(BASE)
+      .get('/repos/acme/widgets/pulls/5')
+      .reply(200, { number: 5, mergeable: false, mergeable_state: 'dirty', merged: false, html_url: 'https://x/5' });
+
+    const result = await client.getPr(5);
+    expect(result).toEqual({ number: 5, mergeable: false, mergeableState: 'dirty', merged: false, htmlUrl: 'https://x/5' });
+  });
 });

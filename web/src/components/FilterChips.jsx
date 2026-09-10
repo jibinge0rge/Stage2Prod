@@ -1,7 +1,8 @@
 export const TICKET_FILTERS = [
   { id: 'all', label: 'All' },
+  { id: 'staging_queued', label: 'Awaiting staging merge' },
   { id: 'staging', label: 'On staging' },
-  { id: 'queued', label: 'Awaiting develop' },
+  { id: 'queued', label: 'Awaiting production' },
   { id: 'conflict', label: 'Conflicts' },
   { id: 'rejected', label: 'Rejected' },
 ];

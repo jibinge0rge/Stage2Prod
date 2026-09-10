@@ -13,7 +13,7 @@ class HttpError extends Error {
   }
 }
 
-const MUTATING_METHODS = ['createMerge', 'mergePr', 'deleteRef', 'updateRef', 'addLabel'];
+const MUTATING_METHODS = ['createMerge', 'createPr', 'mergePr', 'deleteRef', 'updateRef', 'addLabel'];
 
 class GitHubClient {
   /**
@@ -122,6 +122,11 @@ class GitHubClient {
     return { overall, combinedState, checkRuns: checkRunsList };
   }
 
+  async getPr(prNumber) {
+    const data = await this._request('GET', `/repos/${this.owner}/${this.repo}/pulls/${prNumber}`);
+    return { number: data.number, mergeable: data.mergeable, mergeableState: data.mergeable_state, merged: data.merged, htmlUrl: data.html_url };
+  }
+
   async compareCommits(base, head) {
     const data = await this._request('GET', `/repos/${this.owner}/${this.repo}/compare/${base}...${head}`);
     return { aheadBy: data.ahead_by, behindBy: data.behind_by };
@@ -150,6 +155,16 @@ class GitHubClient {
       if (err.status === 409) return { conflict: true, sha: null };
       throw err;
     }
+  }
+
+  async createPr({ base, head, title, body }) {
+    const data = await this._write('POST', `/repos/${this.owner}/${this.repo}/pulls`, {
+      base,
+      head,
+      title,
+      body,
+    });
+    return { number: data.number, htmlUrl: data.html_url, headSha: data.head?.sha ?? null };
   }
 
   async mergePr(prNumber, { mergeMethod = 'merge' } = {}) {
@@ -192,6 +207,7 @@ function createGithubClient(config, { owner, repo, sharedRateLimit } = {}, dryRu
   const client = new GitHubClient({ token: config.GITHUB_TOKEN, owner, repo, sharedRateLimit });
   const synthetic = {
     createMerge: () => ({ conflict: false, sha: 'DRYRUN' }),
+    createPr: () => ({ number: 0, htmlUrl: 'DRYRUN', headSha: 'DRYRUN' }),
     mergePr: () => ({ merged: true, sha: 'DRYRUN' }),
     deleteRef: () => ({ deleted: true }),
     updateRef: () => ({ sha: 'DRYRUN' }),

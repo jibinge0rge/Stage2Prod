@@ -14,9 +14,13 @@ function buildTestCtx() {
     getRef: vi.fn((branch) => Promise.resolve(branch === 'develop' ? 'develop-sha' : 'staging-sha')),
     updateRef: vi.fn().mockResolvedValue({ sha: 'develop-sha' }),
     createMerge: vi.fn().mockResolvedValue({ conflict: false, sha: 'remerge-sha' }),
+    createPr: vi.fn().mockResolvedValue({ number: 99, htmlUrl: 'https://x/99', headSha: 'sha1' }),
   };
   const jira = { addComment: vi.fn().mockResolvedValue({ commented: true }), tryTransition: vi.fn() };
-  const ticketMatcher = { findBranchForTicket: vi.fn().mockResolvedValue('feat/PROJ-1-thing') };
+  const ticketMatcher = {
+    findBranchForTicket: vi.fn().mockResolvedValue('feat/PROJ-1-thing'),
+    findOpenPrForTicket: vi.fn().mockResolvedValue(null),
+  };
   const repoResolver = {
     getClient: vi.fn(() => github),
     getMatcher: vi.fn(() => ticketMatcher),
@@ -119,7 +123,7 @@ describe('POST /api/staging/reset', () => {
     await holdingPromise;
   });
 
-  it('remergeInQa sequentially re-merges every In QA ticket in that repo and reports per-ticket outcomes', async () => {
+  it('remergeInQa sequentially re-opens a staging PR for every In QA ticket in that repo and reports per-ticket outcomes', async () => {
     const ctx = buildTestCtx();
     ctx.ticketsRepo.upsert({ key: 'PROJ-1', jiraStatus: 'In QA', pipelineState: 'unmerged', repoOwner: REPO.owner, repoName: REPO.name });
     ctx.ticketsRepo.upsert({ key: 'PROJ-2', jiraStatus: 'In QA', pipelineState: 'unmerged', repoOwner: REPO.owner, repoName: REPO.name });
@@ -136,7 +140,9 @@ describe('POST /api/staging/reset', () => {
     expect(res.status).toBe(200);
     expect(res.body.remerge.requested).toBe(true);
     expect(res.body.remerge.results).toHaveLength(2);
-    expect(res.body.remerge.results.every((r) => r.outcome === 'MERGED')).toBe(true);
-    expect(ctx.github.createMerge).toHaveBeenCalledTimes(2);
+    expect(res.body.remerge.results.every((r) => r.outcome === 'PR_OPENED')).toBe(true);
+    expect(ctx.github.createPr).toHaveBeenCalledTimes(2);
+    expect(ctx.github.createMerge).not.toHaveBeenCalled();
+    expect(ctx.ticketsRepo.get('PROJ-1').pipeline_state).toBe('staging_queued');
   });
 });

@@ -25,6 +25,18 @@ class Poller {
     return !this._stopped;
   }
 
+  /**
+   * Runs a tick immediately, outside the regular interval — used after a
+   * manual Jira transition from the UI so its effect (e.g. a PR opening)
+   * shows up right away instead of waiting up to POLL_INTERVAL_MS. Joins
+   * an already-in-flight tick rather than starting a second overlapping
+   * one.
+   */
+  async pollNow() {
+    if (this._currentTick) return this._currentTick;
+    return this._tick();
+  }
+
   start() {
     this._stopped = false;
     this.logger.info({ intervalMs: this.config.POLL_INTERVAL_MS }, 'poller started');
@@ -64,6 +76,17 @@ class Poller {
           sprintName: extractSprintName(issue.fields.sprint),
           jiraUpdatedAt: issue.fields.updated,
         });
+
+        // Tag the ticket with its repo as soon as it's ever seen — not
+        // only once a status transition gets processed — whenever its
+        // Jira project key unambiguously maps to exactly one watched
+        // repo. Cheap (DB-only, no GitHub calls), so safe to do for every
+        // ticket on every tick, including ones with no mapped handler.
+        const row = this.ticketsRepo.get(issue.key);
+        if (!row.repo_owner) {
+          const match = this.repoResolver.matchByProjectKeyOnly(issue.key);
+          if (match) this.ticketsRepo.setRepo(issue.key, match.owner, match.name);
+        }
       }
 
       const events = diffIssues(issues, (key) => this.ticketsRepo.getLastSeenStatus(key));

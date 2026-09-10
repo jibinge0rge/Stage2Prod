@@ -9,6 +9,7 @@ function statusLabelFor(row, side) {
   if (side === 'staging') {
     if (row.pipeline_state === 'conflict') return 'conflict';
     if (row.pipeline_state === 'rejected') return 'QA rejected';
+    if (row.pipeline_state === 'staging_queued') return 'awaiting merge';
     return row.jira_status;
   }
   if (row.pipeline_state === 'queued') return 'awaiting merge';
@@ -33,7 +34,7 @@ async function branchesForRepo({ repo, ticketsRepo, github }) {
     commitsAheadOfStaging = aheadOfStaging ? aheadOfStaging.aheadBy : null;
   }
 
-  const stagingRows = ['staging', 'conflict', 'rejected'].flatMap((s) =>
+  const stagingRows = ['staging_queued', 'staging', 'conflict', 'rejected'].flatMap((s) =>
     ticketsRepo.listByPipelineStateAndRepo(s, owner, name)
   );
   const developRows = ['develop', 'queued'].flatMap((s) => ticketsRepo.listByPipelineStateAndRepo(s, owner, name));
