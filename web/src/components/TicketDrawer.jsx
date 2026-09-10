@@ -52,6 +52,8 @@ export default function TicketDrawer({ ticketKey, onClose }) {
   const [branchError, setBranchError] = useState(null);
   const [openingPr, setOpeningPr] = useState(null); // 'staging' | 'production' | null
   const [prError, setPrError] = useState(null);
+  const [closing, setClosing] = useState(false);
+  const [closeError, setCloseError] = useState(null);
 
   useEffect(() => {
     if (!ticket) return;
@@ -119,6 +121,19 @@ export default function TicketDrawer({ ticketKey, onClose }) {
     }
   }
 
+  async function handleClosePr() {
+    setClosing(true);
+    setCloseError(null);
+    try {
+      await postJson(`/tickets/${ticketKey}/pr/close`, {});
+      await refreshTicket();
+    } catch (err) {
+      setCloseError(err.message);
+    } finally {
+      setClosing(false);
+    }
+  }
+
   async function handleMerge() {
     setMerging(true);
     setMergeError(null);
@@ -170,9 +185,9 @@ export default function TicketDrawer({ ticketKey, onClose }) {
   const canOpenStagingPr =
     hasBranch && (state === 'unmerged' || state === 'rejected') && hasStagingChanges;
   const canOpenProductionPr = hasBranch && state === 'staging' && hasProductionChanges;
-  let stagingPrHint = 'Opens a pull request and moves Jira to In QA. Nothing lands on staging until you merge it.';
+  let stagingPrHint = `Opens a pull request. Merge it onto ${stagingLabel} when you're ready — that moves Jira to In QA.`;
   if (!hasBranch) stagingPrHint = 'Create a branch first, then do the work, then open this PR.';
-  else if (stagingPrOpen) stagingPrHint = `PR already open into ${stagingLabel}. Merge it when you're ready for QA.`;
+  else if (stagingPrOpen) stagingPrHint = `PR already open into ${stagingLabel}. Merge it for QA, or close it to go back.`;
   else if (onOrPastStaging) stagingPrHint = `Already on ${stagingLabel}.`;
   else if (!hasStagingChanges) {
     stagingPrHint = `No changes compared to ${stagingLabel} yet — push commits to this branch first.`;
@@ -182,7 +197,7 @@ export default function TicketDrawer({ ticketKey, onClose }) {
   if (!onOrPastStaging && !productionPrOpen) {
     productionPrHint = `Send this to ${stagingLabel} and get QA approval first.`;
   } else if (productionPrOpen) {
-    productionPrHint = `PR already open into ${productionLabel}. Merge it to ship — Jira will move to Done.`;
+    productionPrHint = `PR already open into ${productionLabel}. Merge it to ship, or close it to stay on ${stagingLabel}.`;
   } else if (onOrPastProduction) {
     productionPrHint = `Already merged to ${productionLabel}.`;
   } else if (!hasProductionChanges) {
@@ -341,9 +356,14 @@ export default function TicketDrawer({ ticketKey, onClose }) {
                 </button>
               )}
               {stagingPrOpen && (
-                <button type="button" className="btn btn-primary" onClick={handleMerge} disabled={merging}>
-                  {merging ? 'Merging…' : `Merge PR into ${stagingLabel}`}
-                </button>
+                <>
+                  <button type="button" className="btn btn-primary" onClick={handleMerge} disabled={merging || closing}>
+                    {merging ? 'Merging…' : `Merge PR into ${stagingLabel}`}
+                  </button>
+                  <button type="button" className="btn btn-danger-outline" onClick={handleClosePr} disabled={closing || merging}>
+                    {closing ? 'Closing…' : 'Close PR'}
+                  </button>
+                </>
               )}
             </div>
           </PathStep>
@@ -371,21 +391,32 @@ export default function TicketDrawer({ ticketKey, onClose }) {
                 </button>
               )}
               {productionPrOpen && (
-                <button type="button" className="btn btn-primary" onClick={handleMerge} disabled={merging}>
-                  {merging ? 'Merging…' : `Merge PR into ${productionLabel}`}
-                </button>
+                <>
+                  <button type="button" className="btn btn-primary" onClick={handleMerge} disabled={merging || closing}>
+                    {merging ? 'Merging…' : `Merge PR into ${productionLabel}`}
+                  </button>
+                  <button type="button" className="btn btn-danger-outline" onClick={handleClosePr} disabled={closing || merging}>
+                    {closing ? 'Closing…' : 'Close PR'}
+                  </button>
+                </>
               )}
             </div>
           </PathStep>
 
           {state === 'conflict' && !stagingPrOpen && !productionPrOpen && (
-            <div>
-              <button type="button" className="btn btn-primary" onClick={handleMerge} disabled={merging}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <button type="button" className="btn btn-primary" onClick={handleMerge} disabled={merging || closing}>
                 {merging ? 'Merging…' : 'Retry merge'}
               </button>
+              {ticket.prNumber ? (
+                <button type="button" className="btn btn-danger-outline" onClick={handleClosePr} disabled={closing || merging}>
+                  {closing ? 'Closing…' : 'Close PR'}
+                </button>
+              ) : null}
             </div>
           )}
           {prError && <div style={{ fontSize: 11, color: 'var(--danger)' }}>{prError}</div>}
+          {closeError && <div style={{ fontSize: 11, color: 'var(--danger)' }}>{closeError}</div>}
           {mergeError && <div style={{ fontSize: 11, color: 'var(--danger)' }}>{mergeError}</div>}
         </div>
 

@@ -4,6 +4,7 @@ const { newCorrelationId } = require('../lib/correlationId');
 const { mergeOpenPr, MergeNotReadyError } = require('../services/mergeOpenPr');
 const { createBranchFromProduction, BranchNotReadyError } = require('../services/createBranch');
 const { openTicketPr, PrNotReadyError } = require('../services/openTicketPr');
+const { closeTicketPr, CloseNotReadyError } = require('../services/closeTicketPr');
 const { compareBranchToTargets } = require('../services/branchDiff');
 
 function rowToApi(row, reposRepo) {
@@ -183,6 +184,49 @@ function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller,
     } catch (err) {
       if (err instanceof PrNotReadyError || err.status === 400) {
         return res.status(400).json({ error: 'bad_request', message: err.message });
+      }
+      if (err.status === 404) {
+        return res.status(404).json({ error: 'not_found', message: err.message });
+      }
+      return next(err);
+    }
+  });
+
+  router.post('/tickets/:key/pr/close', requireApiToken, async (req, res, next) => {
+    const { key } = req.params;
+    const row = ticketsRepo.get(key);
+    if (!row) return res.status(404).json({ error: 'not_found', message: `no ticket ${key}` });
+    if (!row.repo_owner) {
+      return res.status(400).json({ error: 'bad_request', message: 'ticket has no resolved repo yet' });
+    }
+    const repoConfig = reposRepo.get(row.repo_owner, row.repo_name);
+    if (!repoConfig) {
+      return res.status(400).json({ error: 'bad_request', message: `${row.repo_owner}/${row.repo_name} is not a watched repo` });
+    }
+    const correlationId = newCorrelationId();
+    try {
+      await closeTicketPr({
+        ticketKey: key,
+        repoOwner: row.repo_owner,
+        repoName: row.repo_name,
+        productionBranch: repoConfig.productionBranch,
+        stagingBranch: repoConfig.stagingBranch,
+        github: repoResolver.getClient(row.repo_owner, row.repo_name),
+        jira,
+        ticketsRepo,
+        eventsRepo,
+        lockManager,
+        log: logger.child({ correlationId, ticketKey: key }),
+        correlationId,
+      });
+      const updated = ticketsRepo.get(key);
+      return res.json(rowToApi(updated, reposRepo));
+    } catch (err) {
+      if (err instanceof CloseNotReadyError || err.status === 400) {
+        return res.status(400).json({ error: 'bad_request', message: err.message });
+      }
+      if (err.status === 409) {
+        return res.status(409).json({ error: 'conflict', message: err.message });
       }
       if (err.status === 404) {
         return res.status(404).json({ error: 'not_found', message: err.message });

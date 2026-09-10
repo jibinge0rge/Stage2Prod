@@ -58,6 +58,80 @@ describe('untrackedForRepo', () => {
     expect(github.listCommitsAhead).toHaveBeenCalledWith('develop', 'staging');
   });
 
+  it('does not flag the merge commit (or its feature commits) from a ticket PR as untracked', async () => {
+    const github = stubGithub({
+      listCommitsAhead: vi.fn().mockResolvedValue([
+        {
+          sha: 'feat1',
+          parents: [{ sha: 'prod' }],
+          commit: { message: 'wip login', author: { name: 'alice', date: 't1' } },
+          html_url: 'https://x/feat1',
+        },
+        {
+          sha: 'merge1',
+          parents: [{ sha: 'prod' }, { sha: 'feat1' }],
+          commit: { message: 'Merge pull request #12 from acme/feat/PROJ-1-login', author: { name: 'bot', date: 't2' } },
+          html_url: 'https://x/merge1',
+        },
+      ]),
+    });
+
+    const result = await untrackedForRepo({ repo: repo(), github, ticketKeys: ['PROJ-1'] });
+    expect(result.stagingCommits).toEqual([]);
+  });
+
+  it('still reports a non-merge commit that is not part of any ticket PR merge', async () => {
+    const github = stubGithub({
+      listCommitsAhead: vi.fn().mockResolvedValue([
+        {
+          sha: 'stray',
+          parents: [{ sha: 'prod' }],
+          commit: { message: 'hotfix with no ticket', author: { name: 'bob', date: 't0' } },
+          html_url: 'https://x/stray',
+        },
+        {
+          sha: 'feat1',
+          parents: [{ sha: 'prod' }],
+          commit: { message: 'wip', author: { name: 'alice', date: 't1' } },
+          html_url: 'https://x/feat1',
+        },
+        {
+          sha: 'merge1',
+          parents: [{ sha: 'prod' }, { sha: 'feat1' }],
+          commit: { message: 'Merge pull request #12 from acme/feat/PROJ-1-login', author: { name: 'bot', date: 't2' } },
+          html_url: 'https://x/merge1',
+        },
+      ]),
+    });
+
+    const result = await untrackedForRepo({ repo: repo(), github, ticketKeys: ['PROJ-1'] });
+    expect(result.stagingCommits).toEqual([
+      { sha: 'stray', message: 'hotfix with no ticket', author: 'bob', date: 't0', url: 'https://x/stray' },
+    ]);
+  });
+
+  it('ignores a merge commit even when its message has no ticket key', async () => {
+    const github = stubGithub({
+      listCommitsAhead: vi.fn().mockResolvedValue([
+        {
+          sha: 'feat1',
+          parents: [{ sha: 'prod' }],
+          commit: { message: 'PROJ-1: login', author: { name: 'alice', date: 't1' } },
+          html_url: 'https://x/feat1',
+        },
+        {
+          sha: 'merge1',
+          parents: [{ sha: 'prod' }, { sha: 'feat1' }],
+          commit: { message: 'Merge pull request #12 from acme/scratch', author: { name: 'bot', date: 't2' } },
+          html_url: 'https://x/merge1',
+        },
+      ]),
+    });
+
+    const result = await untrackedForRepo({ repo: repo(), github, ticketKeys: ['PROJ-1'] });
+    expect(result.stagingCommits).toEqual([]);
+  });
+
   it('tolerates listCommitsAhead failing by reporting no untracked staging commits', async () => {
     const github = stubGithub({ listCommitsAhead: vi.fn().mockRejectedValue(new Error('boom')) });
 

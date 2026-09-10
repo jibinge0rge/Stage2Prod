@@ -8,6 +8,7 @@ import ConflictBanner from '../components/ConflictBanner';
 import BranchBoard from '../components/BranchBoard';
 import ServiceHealthList from '../components/ServiceHealthList';
 import { RecentEventsList } from '../components/EventTable';
+import { isUnderDevelopment } from '../lib/ticketFilters';
 
 function startOfTodayIso() {
   const d = new Date();
@@ -76,6 +77,7 @@ export default function Overview() {
   useRegisterRefresh(refreshAll);
 
   const tickets = ticketsData?.tickets ?? [];
+  const inProgress = tickets.filter(isUnderDevelopment);
   const onStaging = tickets.filter((t) => t.pipelineState === 'staging');
   const awaitingDevelop = tickets.filter((t) => t.pipelineState === 'queued');
   const conflicts = tickets.filter((t) => t.pipelineState === 'conflict');
@@ -104,6 +106,12 @@ export default function Overview() {
       <ConflictBanner tickets={conflicts} />
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(160px,1fr))', gap: 12 }}>
+        <KpiTile
+          label="In progress"
+          value={inProgress.length}
+          caption="under development, not yet on staging"
+          onClick={() => navigate('/pipeline?filter=in_progress')}
+        />
         <KpiTile label="On staging" value={onStaging.length} caption="tickets awaiting QA validation" />
         <KpiTile label="Awaiting production" value={awaitingDevelop.length} caption="QA passed, PR ready to merge" />
         <KpiTile

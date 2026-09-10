@@ -13,7 +13,7 @@ class HttpError extends Error {
   }
 }
 
-const MUTATING_METHODS = ['createMerge', 'createPr', 'mergePr', 'deleteRef', 'updateRef', 'addLabel', 'createRef'];
+const MUTATING_METHODS = ['createMerge', 'createPr', 'mergePr', 'closePr', 'deleteRef', 'updateRef', 'addLabel', 'createRef'];
 
 class GitHubClient {
   /**
@@ -183,6 +183,13 @@ class GitHubClient {
     return { merged: data.merged, sha: data.sha };
   }
 
+  async closePr(prNumber) {
+    const data = await this._write('PATCH', `/repos/${this.owner}/${this.repo}/pulls/${prNumber}`, {
+      state: 'closed',
+    });
+    return { number: data.number, state: data.state };
+  }
+
   async deleteRef(branch) {
     try {
       await this._write('DELETE', `/repos/${this.owner}/${this.repo}/git/refs/heads/${branch}`);
@@ -226,6 +233,7 @@ function createGithubClient(config, { owner, repo, sharedRateLimit } = {}, dryRu
     createMerge: () => ({ conflict: false, sha: 'DRYRUN' }),
     createPr: () => ({ number: 0, htmlUrl: 'DRYRUN', headSha: 'DRYRUN' }),
     mergePr: () => ({ merged: true, sha: 'DRYRUN' }),
+    closePr: () => ({ number: 0, state: 'closed' }),
     deleteRef: () => ({ deleted: true }),
     updateRef: () => ({ sha: 'DRYRUN' }),
     addLabel: () => ({ added: true }),

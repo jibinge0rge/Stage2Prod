@@ -1,3 +1,5 @@
+const { isMergeCommit } = require('../lib/gitCommit');
+
 /**
  * Finds GitHub activity in a watched repo that Stage2Prod's Jira-driven
  * workflow has no ticket for: open PRs targeting the staging branch, open
@@ -10,6 +12,46 @@
 function matchesAnyTicket(text, ticketKeys) {
   if (!text) return false;
   return ticketKeys.some((key) => text.includes(key));
+}
+
+function parentShas(commit) {
+  return (commit.parents || []).map((p) => p.sha).filter(Boolean);
+}
+
+function messageOf(commit) {
+  return commit.commit ? commit.commit.message : '';
+}
+
+/**
+ * Feature commits of a "Merge pull request" often have messages like
+ * "wip" with no ticket key. The merge commit itself usually names the
+ * branch (`Merge pull request #12 from org/feat/PROJ-1-login`). Treat
+ * those incoming-branch commits as tracked so Overview doesn't flag
+ * the merge plumbing as "without a ticket".
+ */
+function shasCoveredByTicketMerges(commits, ticketKeys) {
+  const covered = new Set();
+  const inWindow = new Set(commits.map((c) => c.sha));
+
+  for (const c of commits) {
+    if (!isMergeCommit(c) || !matchesAnyTicket(messageOf(c), ticketKeys)) continue;
+    for (const sha of parentShas(c).slice(1)) covered.add(sha);
+  }
+
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const c of commits) {
+      if (!covered.has(c.sha)) continue;
+      for (const sha of parentShas(c)) {
+        if (inWindow.has(sha) && !covered.has(sha)) {
+          covered.add(sha);
+          grew = true;
+        }
+      }
+    }
+  }
+  return covered;
 }
 
 function toUntrackedPr(pr) {
@@ -54,8 +96,11 @@ async function untrackedForRepo({ repo, github, ticketKeys }) {
 
   // Ahead-of-production only (not "last 20 on staging") so a commit
   // production and staging both already share is never double-counted.
+  const coveredByTicketMerge = shasCoveredByTicketMerges(stagingAheadCommits, ticketKeys);
   const untrackedStagingCommits = stagingAheadCommits
-    .filter((c) => !matchesAnyTicket(c.commit ? c.commit.message : '', ticketKeys))
+    .filter((c) => !isMergeCommit(c))
+    .filter((c) => !coveredByTicketMerge.has(c.sha))
+    .filter((c) => !matchesAnyTicket(messageOf(c), ticketKeys))
     .map(toUntrackedCommit);
 
   return {

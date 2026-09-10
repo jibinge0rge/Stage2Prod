@@ -45,7 +45,8 @@ describe('mergeOpenPr', () => {
     expect(deps.github.deleteRef).not.toHaveBeenCalled();
     expect(deps.ticketsRepo.get('PROJ-1').pipeline_state).toBe(PIPELINE_STATES.STAGING);
     expect(deps.jira.addComment).toHaveBeenCalledWith('PROJ-1', expect.stringContaining('staging'));
-    expect(deps.jira.tryTransition).not.toHaveBeenCalled();
+    expect(deps.jira.tryTransition).toHaveBeenCalledWith('PROJ-1', 'In QA');
+    expect(deps.ticketsRepo.get('PROJ-1').jira_status).toBe('In QA');
   });
 
   it('merges a queued ticket into develop and deletes the branch', async () => {

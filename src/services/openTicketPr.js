@@ -1,8 +1,7 @@
-const { OUTCOMES, refKey, JIRA_STATUSES } = require('../lib/constants');
+const { OUTCOMES, refKey } = require('../lib/constants');
 const { ensureStagingPrCore } = require('../handlers/toStaging');
 const { ensureDevelopPrCore } = require('../handlers/toDevelop');
 const { aheadBy } = require('./branchDiff');
-const { syncJiraStatus } = require('../lib/syncJiraStatus');
 
 class PrNotReadyError extends Error {
   constructor(message) {
@@ -96,13 +95,6 @@ async function openTicketPr({
         `Couldn't open a staging PR — no branch containing "${ticketKey}" was found. Create a branch first.`
       );
     }
-    await syncJiraStatus({
-      jira,
-      ticketsRepo,
-      ticketKey,
-      status: JIRA_STATUSES.IN_QA,
-      log,
-    });
     return { ...result, target: 'staging' };
   }
 

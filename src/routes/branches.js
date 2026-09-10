@@ -1,4 +1,5 @@
 const express = require('express');
+const { countNonMergeCommits } = require('../lib/gitCommit');
 
 function formatTime(iso) {
   if (!iso) return '';
@@ -27,11 +28,13 @@ async function branchesForRepo({ repo, ticketsRepo, github }) {
   let commitsAheadOfStaging = null;
   if (stagingSha && productionSha) {
     const [aheadOfProduction, aheadOfStaging] = await Promise.all([
-      github.compareCommits(productionBranch, stagingBranch).catch(() => null),
-      github.compareCommits(stagingBranch, productionBranch).catch(() => null),
+      github.listCommitsAhead(productionBranch, stagingBranch).catch(() => null),
+      github.listCommitsAhead(stagingBranch, productionBranch).catch(() => null),
     ]);
-    commitsAheadOfProduction = aheadOfProduction ? aheadOfProduction.aheadBy : null;
-    commitsAheadOfStaging = aheadOfStaging ? aheadOfStaging.aheadBy : null;
+    // Merge commits are PR plumbing (Stage2Prod always uses merge-commit,
+    // not squash) — they are not extra unvalidated work.
+    commitsAheadOfProduction = aheadOfProduction ? countNonMergeCommits(aheadOfProduction) : null;
+    commitsAheadOfStaging = aheadOfStaging ? countNonMergeCommits(aheadOfStaging) : null;
   }
 
   const stagingRows = ['staging_queued', 'staging', 'conflict', 'rejected'].flatMap((s) =>

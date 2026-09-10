@@ -87,6 +87,15 @@ describe('GitHubClient', () => {
     expect(result).toEqual({ number: 5, htmlUrl: 'https://github.com/acme/widgets/pull/5', headSha: 'headsha1' });
   });
 
+  it('closePr patches the pull to state closed', async () => {
+    nock(BASE)
+      .patch('/repos/acme/widgets/pulls/5', { state: 'closed' })
+      .reply(200, { number: 5, state: 'closed' });
+
+    const result = await client.closePr(5);
+    expect(result).toEqual({ number: 5, state: 'closed' });
+  });
+
   it('getPr returns state/mergeable/mergeableState/merged/base/head', async () => {
     nock(BASE)
       .get('/repos/acme/widgets/pulls/5')

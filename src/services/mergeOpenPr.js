@@ -141,6 +141,8 @@ async function mergeOpenPr({ ticketKey, repoOwner, repoName, productionBranch, s
     });
     if (target === 'develop') {
       await syncJiraStatus({ jira, ticketsRepo, ticketKey, status: JIRA_STATUSES.DONE, log });
+    } else {
+      await syncJiraStatus({ jira, ticketsRepo, ticketKey, status: JIRA_STATUSES.IN_QA, log });
     }
     return { outcome: OUTCOMES.MERGED, target, alreadyMerged: true };
   }
@@ -182,6 +184,7 @@ async function mergeOpenPr({ ticketKey, repoOwner, repoName, productionBranch, s
         ticketsRepo.setPipelineState(ticketKey, PIPELINE_STATES.STAGING);
         ticketsRepo.setGithubFacts(ticketKey, { prState: 'merged', headSha: merged.sha });
         await jira.addComment(ticketKey, JIRA_COMMENTS.STAGING_SUCCESS);
+        await syncJiraStatus({ jira, ticketsRepo, ticketKey, status: JIRA_STATUSES.IN_QA, log });
         eventsRepo.insertEvent({
           ticketKey,
           trigger,

@@ -259,8 +259,63 @@ describe('POST /api/tickets/:key/merge', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.pipelineState).toBe('staging');
+    expect(res.body.jiraStatus).toBe('In QA');
     expect(github.mergePr).toHaveBeenCalledWith(7, { mergeMethod: 'merge' });
     expect(github.deleteRef).not.toHaveBeenCalled();
+    expect(ctx.jira.tryTransition).toHaveBeenCalledWith('PROJ-1', 'In QA');
+  });
+});
+
+describe('POST /api/tickets/:key/pr/close', () => {
+  it('401s without a bearer token', async () => {
+    const app = createApp(buildTestCtx());
+    const res = await request(app).post('/api/tickets/PROJ-1/pr/close').send({});
+    expect(res.status).toBe(401);
+  });
+
+  it('404s for an unknown ticket', async () => {
+    const app = createApp(buildTestCtx());
+    const res = await request(app)
+      .post('/api/tickets/NOPE-1/pr/close')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send({});
+    expect(res.status).toBe(404);
+  });
+
+  it('closes the open staging PR and returns the ticket as unmerged with the branch kept', async () => {
+    const ctx = buildTestCtx();
+    ctx.reposRepo.add('acme', 'widgets', { productionBranch: 'main', stagingBranch: 'qa' });
+    ctx.ticketsRepo.upsert({
+      key: 'PROJ-1',
+      jiraStatus: 'In Progress',
+      pipelineState: 'staging_queued',
+      repoOwner: 'acme',
+      repoName: 'widgets',
+    });
+    ctx.ticketsRepo.setGithubFacts('PROJ-1', { prNumber: 7, branchName: 'feat/PROJ-1-thing' });
+    const github = {
+      getPr: vi.fn().mockResolvedValue({
+        number: 7,
+        state: 'open',
+        merged: false,
+        base: 'qa',
+        head: 'feat/PROJ-1-thing',
+      }),
+      closePr: vi.fn().mockResolvedValue({ number: 7, state: 'closed' }),
+    };
+    ctx.repoResolver.getClient = vi.fn(() => github);
+    const app = createApp(ctx);
+
+    const res = await request(app)
+      .post('/api/tickets/PROJ-1/pr/close')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send({});
+
+    expect(res.status).toBe(200);
+    expect(res.body.pipelineState).toBe('unmerged');
+    expect(res.body.prNumber).toBeNull();
+    expect(res.body.branch).toBe('feat/PROJ-1-thing');
+    expect(github.closePr).toHaveBeenCalledWith(7);
   });
 });
 
@@ -386,9 +441,9 @@ describe('POST /api/tickets/:key/pr', () => {
     expect(res.status).toBe(201);
     expect(res.body.pipelineState).toBe('staging_queued');
     expect(res.body.prNumber).toBe(42);
-    expect(res.body.jiraStatus).toBe('In QA');
+    expect(res.body.jiraStatus).toBe('In Development');
     expect(github.createPr).toHaveBeenCalledWith(expect.objectContaining({ base: 'qa', head: 'feat/PROJ-1-login' }));
-    expect(ctx.jira.tryTransition).toHaveBeenCalledWith('PROJ-1', 'In QA');
+    expect(ctx.jira.tryTransition).not.toHaveBeenCalled();
   });
 
   it('400s when the branch has no commits ahead of the target', async () => {
