@@ -71,9 +71,11 @@ export default function BranchBoard({ entry, untrackedStagingCount }) {
           dotColor="var(--brand)"
           subtitle={
             staging
-              ? `${staging.commitsAheadOfDevelop ?? '—'} unvalidated ${
-                  staging.commitsAheadOfDevelop === 1 ? 'commit' : 'commits'
-                } ahead · head ${staging.headSha ? staging.headSha.slice(0, 7) : '—'}`
+              ? untrackedStagingCount > 0
+                ? `${untrackedStagingCount} unvalidated ${
+                    untrackedStagingCount === 1 ? 'commit' : 'commits'
+                  } ahead · head ${staging.headSha ? staging.headSha.slice(0, 7) : '—'}`
+                : `head ${staging.headSha ? staging.headSha.slice(0, 7) : '—'}`
               : 'loading…'
           }
           tickets={staging?.tickets ?? []}

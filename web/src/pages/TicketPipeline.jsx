@@ -57,7 +57,11 @@ export default function TicketPipeline() {
             fontSize: 12,
           }}
         />
-        <FilterChips value={filter} onChange={(id) => setSearchParams(id === 'all' ? {} : { filter: id })} />
+        <FilterChips
+          value={filter}
+          tickets={allTickets}
+          onChange={(id) => setSearchParams(id === 'all' ? {} : { filter: id })}
+        />
         <div className="spacer" />
         <div style={{ fontSize: 11, color: 'var(--n-muted)' }}>
           {rows.length} of {allTickets.length} tickets

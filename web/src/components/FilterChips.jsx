@@ -8,10 +8,13 @@ export const TICKET_FILTERS = [
   { id: 'rejected', label: 'Rejected' },
 ];
 
-export default function FilterChips({ value, onChange }) {
+export default function FilterChips({ value, onChange, tickets = [] }) {
+  const hasRejected = tickets.some((t) => t.pipelineState === 'rejected');
+  const filters = TICKET_FILTERS.filter((f) => f.id !== 'rejected' || hasRejected || value === 'rejected');
+
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-      {TICKET_FILTERS.map((f) => (
+      {filters.map((f) => (
         <button
           key={f.id}
           type="button"
