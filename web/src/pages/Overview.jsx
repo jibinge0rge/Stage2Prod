@@ -9,6 +9,7 @@ import BranchBoard from '../components/BranchBoard';
 import ServiceHealthList from '../components/ServiceHealthList';
 import { RecentEventsList } from '../components/EventTable';
 import { isUnderDevelopment } from '../lib/ticketFilters';
+import { countMergedToday } from '../lib/mergedToday';
 
 function startOfTodayIso() {
   const d = new Date();
@@ -83,13 +84,11 @@ export default function Overview() {
   const conflicts = tickets.filter((t) => t.pipelineState === 'conflict');
   const mergedEvents = mergedTodayData?.events ?? [];
   const resetCutoffByRepo = latestResetByRepo(resetTodayData?.events ?? []);
-  const mergedToDevelop = mergedEvents.filter((e) => e.action === 'merge:develop').length;
-  const mergedToStaging = mergedEvents.filter((e) => {
-    if (e.action !== 'merge:staging') return false;
-    const cutoff = resetCutoffByRepo.get(eventRepoKey(e));
-    return cutoff == null || new Date(e.timestamp).getTime() > cutoff;
-  }).length;
-  const mergedTodayTotal = mergedToDevelop + mergedToStaging;
+  const { toDevelop: mergedToDevelop, toStaging: mergedToStaging, total: mergedTodayTotal } = countMergedToday(
+    mergedEvents,
+    resetCutoffByRepo,
+    eventRepoKey
+  );
 
   const allRepoEntries = branchesData?.repos ?? [];
   const repoEntries =
@@ -123,7 +122,7 @@ export default function Overview() {
         <KpiTile
           label="Merged today"
           value={mergedTodayTotal}
-          caption={`${mergedToDevelop} to develop, ${mergedToStaging} to staging`}
+          caption={`${mergedToDevelop} to production, ${mergedToStaging} to staging`}
           valueColor="var(--success-text)"
         />
       </div>
