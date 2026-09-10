@@ -113,4 +113,13 @@ describe('GitHubClient', () => {
       htmlUrl: 'https://x/5',
     });
   });
+
+  it('createRef posts refs/heads/{branch} at the given sha', async () => {
+    nock(BASE)
+      .post('/repos/acme/widgets/git/refs', { ref: 'refs/heads/feat/PROJ-1', sha: 'abc123' })
+      .reply(201, { object: { sha: 'abc123' } });
+
+    const result = await client.createRef('feat/PROJ-1', 'abc123');
+    expect(result).toEqual({ sha: 'abc123' });
+  });
 });

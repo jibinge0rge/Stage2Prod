@@ -13,7 +13,7 @@ class HttpError extends Error {
   }
 }
 
-const MUTATING_METHODS = ['createMerge', 'createPr', 'mergePr', 'deleteRef', 'updateRef', 'addLabel'];
+const MUTATING_METHODS = ['createMerge', 'createPr', 'mergePr', 'deleteRef', 'updateRef', 'addLabel', 'createRef'];
 
 class GitHubClient {
   /**
@@ -205,6 +205,14 @@ class GitHubClient {
     await this._write('POST', `/repos/${this.owner}/${this.repo}/issues/${prNumber}/labels`, { labels: [label] });
     return { added: true };
   }
+
+  async createRef(branch, sha) {
+    const data = await this._write('POST', `/repos/${this.owner}/${this.repo}/git/refs`, {
+      ref: `refs/heads/${branch}`,
+      sha,
+    });
+    return { sha: data.object.sha };
+  }
 }
 
 /**
@@ -221,6 +229,7 @@ function createGithubClient(config, { owner, repo, sharedRateLimit } = {}, dryRu
     deleteRef: () => ({ deleted: true }),
     updateRef: () => ({ sha: 'DRYRUN' }),
     addLabel: () => ({ added: true }),
+    createRef: () => ({ sha: 'DRYRUN' }),
   };
   return wrapWithDryRun(client, MUTATING_METHODS, synthetic, dryRun);
 }

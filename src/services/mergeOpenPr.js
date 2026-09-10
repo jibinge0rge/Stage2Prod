@@ -1,4 +1,5 @@
-const { OUTCOMES, PIPELINE_STATES, JIRA_COMMENTS, refKey } = require('../lib/constants');
+const { OUTCOMES, PIPELINE_STATES, JIRA_COMMENTS, JIRA_STATUSES, refKey } = require('../lib/constants');
+const { syncJiraStatus } = require('../lib/syncJiraStatus');
 
 class MergeNotReadyError extends Error {
   constructor(pipelineState) {
@@ -138,6 +139,9 @@ async function mergeOpenPr({ ticketKey, repoOwner, repoName, productionBranch, s
       repoOwner,
       repoName,
     });
+    if (target === 'develop') {
+      await syncJiraStatus({ jira, ticketsRepo, ticketKey, status: JIRA_STATUSES.DONE, log });
+    }
     return { outcome: OUTCOMES.MERGED, target, alreadyMerged: true };
   }
 
@@ -160,6 +164,7 @@ async function mergeOpenPr({ ticketKey, repoOwner, repoName, productionBranch, s
         ticketsRepo.setPipelineState(ticketKey, PIPELINE_STATES.DEVELOP);
         ticketsRepo.setGithubFacts(ticketKey, { prState: 'merged', headSha: merged.sha });
         await jira.addComment(ticketKey, JIRA_COMMENTS.DEVELOP_SUCCESS);
+        await syncJiraStatus({ jira, ticketsRepo, ticketKey, status: JIRA_STATUSES.DONE, log });
         eventsRepo.insertEvent({
           ticketKey,
           trigger,

@@ -125,7 +125,9 @@ class JiraClient {
 
   async transition(ticketKey, transitionName) {
     const transitions = await this.getTransitions(ticketKey);
-    const match = transitions.find((t) => t.name === transitionName);
+    const match =
+      transitions.find((t) => t.name === transitionName) ||
+      transitions.find((t) => t.to?.name === transitionName);
     if (!match) return { transitioned: false, reason: 'transition-not-available' };
     await this._withJiraBackoff(() =>
       this._request('POST', `/rest/api/3/issue/${ticketKey}/transitions`, { transition: { id: match.id } })

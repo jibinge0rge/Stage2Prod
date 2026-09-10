@@ -1,23 +1,45 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import styles from '../layout/AppShell.module.css';
 import { useApi, postJson } from '../lib/api';
 import { StateBadge } from './Badge';
 import CustomSelect from './CustomSelect';
 import { pipelineStyle, checkStatusColor } from '../lib/styleMaps';
+import { defaultBranchName } from '../lib/branchName';
 
-const MERGE_TARGET_LABEL = {
-  staging_queued: 'Merge PR into staging',
-  queued: 'Merge PR into develop',
-  // Which branch a conflicted merge was headed for isn't known client-side
-  // (the backend re-checks the PR's real base branch on retry) — generic
-  // label until that resolves one way or the other.
-  conflict: 'Retry merge',
-};
+function PathStep({ n, title, hint, done, children }) {
+  return (
+    <div style={{ display: 'flex', gap: 10 }}>
+      <div
+        style={{
+          width: 20,
+          height: 20,
+          borderRadius: 10,
+          flexShrink: 0,
+          marginTop: 1,
+          background: done ? 'var(--success-fill)' : 'var(--n-fill-subtle)',
+          color: done ? 'var(--success-text)' : 'var(--n-muted)',
+          fontSize: 10,
+          fontWeight: 600,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        {done ? '✓' : n}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--n-strongest)' }}>{title}</div>
+        {hint ? <div style={{ fontSize: 11, color: 'var(--n-muted)', marginTop: 2 }}>{hint}</div> : null}
+        {children ? <div style={{ marginTop: 8 }}>{children}</div> : null}
+      </div>
+    </div>
+  );
+}
 
 export default function TicketDrawer({ ticketKey, onClose }) {
-  const { data: ticket, loading, refresh } = useApi(`/tickets/${ticketKey}`);
+  const { data: ticket, loading, refresh } = useApi(`/tickets/${ticketKey}`, { intervalMs: 15000 });
   const { data: health } = useApi('/health');
-  const { data: transitionsData } = useApi(`/tickets/${ticketKey}/transitions`);
+  const { data: transitionsData, refresh: refreshTransitions } = useApi(`/tickets/${ticketKey}/transitions`);
   const [transitioning, setTransitioning] = useState(false);
   const [transitionError, setTransitionError] = useState(null);
   const [commentText, setCommentText] = useState('');
@@ -25,6 +47,22 @@ export default function TicketDrawer({ ticketKey, onClose }) {
   const [commentError, setCommentError] = useState(null);
   const [merging, setMerging] = useState(false);
   const [mergeError, setMergeError] = useState(null);
+  const [branchName, setBranchName] = useState('');
+  const [creatingBranch, setCreatingBranch] = useState(false);
+  const [branchError, setBranchError] = useState(null);
+  const [openingPr, setOpeningPr] = useState(null); // 'staging' | 'production' | null
+  const [prError, setPrError] = useState(null);
+
+  useEffect(() => {
+    if (!ticket) return;
+    setBranchName(ticket.branch || defaultBranchName(ticket.key, ticket.summary));
+    setBranchError(null);
+  }, [ticket?.key, ticket?.branch, ticket?.summary]);
+
+  async function refreshTicket() {
+    await refresh();
+    await refreshTransitions();
+  }
 
   async function handleTransition(name) {
     if (!name) return;
@@ -32,7 +70,7 @@ export default function TicketDrawer({ ticketKey, onClose }) {
     setTransitionError(null);
     try {
       await postJson(`/tickets/${ticketKey}/transition`, { name });
-      await refresh();
+      await refreshTicket();
     } catch (err) {
       setTransitionError(err.message);
     } finally {
@@ -54,6 +92,33 @@ export default function TicketDrawer({ ticketKey, onClose }) {
     }
   }
 
+  async function handleCreateBranch() {
+    if (!branchName.trim()) return;
+    setCreatingBranch(true);
+    setBranchError(null);
+    try {
+      await postJson(`/tickets/${ticketKey}/branch`, { name: branchName.trim() });
+      await refreshTicket();
+    } catch (err) {
+      setBranchError(err.message);
+    } finally {
+      setCreatingBranch(false);
+    }
+  }
+
+  async function handleOpenPr(target) {
+    setOpeningPr(target);
+    setPrError(null);
+    try {
+      await postJson(`/tickets/${ticketKey}/pr`, { target });
+      await refreshTicket();
+    } catch (err) {
+      setPrError(err.message);
+    } finally {
+      setOpeningPr(null);
+    }
+  }
+
   async function handleMerge() {
     setMerging(true);
     setMergeError(null);
@@ -62,11 +127,7 @@ export default function TicketDrawer({ ticketKey, onClose }) {
     } catch (err) {
       setMergeError(err.message);
     } finally {
-      // Refresh either way: even a "failed" merge attempt can change the
-      // ticket's pipeline state server-side (e.g. a gone/closed PR clears
-      // it back to unmerged instead of leaving it stuck) — the drawer
-      // needs to reflect that, not just show the error on stale data.
-      await refresh();
+      await refreshTicket();
       setMerging(false);
     }
   }
@@ -87,22 +148,46 @@ export default function TicketDrawer({ ticketKey, onClose }) {
   }
 
   const jiraUrl = health?.jiraHost ? `https://${health.jiraHost}/browse/${ticket.key}` : null;
-  const mergeLabel = MERGE_TARGET_LABEL[ticket.pipelineState];
-  // The PR shown here isn't always headed to production — a ticket still
-  // in staging_queued/staging has a PR (or merge) into the staging
-  // branch, not develop. Previously this always showed productionBranch
-  // regardless, which was wrong for every staging-bound PR.
+  const productionLabel = ticket.repo?.productionBranch ?? 'production';
+  const stagingLabel = ticket.repo?.stagingBranch ?? 'staging';
+  const state = ticket.pipelineState;
+  const hasBranch = Boolean(ticket.branch);
+  const canResolveRepo = Boolean(ticket.repo) || (health?.watchedRepos?.length === 1);
   const prTargetBranch =
-    ticket.pipelineState === 'staging_queued' || ticket.pipelineState === 'staging'
-      ? ticket.repo?.stagingBranch ?? 'staging'
-      : ticket.repo?.productionBranch ?? 'develop';
+    state === 'staging_queued' || state === 'staging' ? stagingLabel : productionLabel;
   const transitionOptions = (transitionsData?.transitions ?? []).map((t) => ({ value: t.name, label: t.name }));
-  // Show the real reason the last merge attempt failed (a genuine
-  // conflict, a closed PR, a deleted branch — these need different fixes)
-  // instead of assuming it was a content conflict, which it often isn't.
-  const lastFailure = ticket.pipelineState === 'conflict'
-    ? [...(ticket.timeline || [])].reverse().find((ev) => ev.title === 'Merge failed')
-    : null;
+  const lastFailure =
+    state === 'conflict'
+      ? [...(ticket.timeline || [])].reverse().find((ev) => ev.title === 'Merge failed')
+      : null;
+
+  const onOrPastStaging = ['staging', 'queued', 'develop'].includes(state);
+  const onOrPastProduction = state === 'develop';
+  const stagingPrOpen = state === 'staging_queued';
+  const productionPrOpen = state === 'queued';
+  const hasStagingChanges = (ticket.aheadOfStaging ?? 0) > 0;
+  const hasProductionChanges = (ticket.aheadOfProduction ?? 0) > 0;
+  const canOpenStagingPr =
+    hasBranch && (state === 'unmerged' || state === 'rejected') && hasStagingChanges;
+  const canOpenProductionPr = hasBranch && state === 'staging' && hasProductionChanges;
+  let stagingPrHint = 'Opens a pull request and moves Jira to In QA. Nothing lands on staging until you merge it.';
+  if (!hasBranch) stagingPrHint = 'Create a branch first, then do the work, then open this PR.';
+  else if (stagingPrOpen) stagingPrHint = `PR already open into ${stagingLabel}. Merge it when you're ready for QA.`;
+  else if (onOrPastStaging) stagingPrHint = `Already on ${stagingLabel}.`;
+  else if (!hasStagingChanges) {
+    stagingPrHint = `No changes compared to ${stagingLabel} yet — push commits to this branch first.`;
+  }
+
+  let productionPrHint = `After QA, open a PR into ${productionLabel}, then merge it. Merging marks the ticket Done in Jira.`;
+  if (!onOrPastStaging && !productionPrOpen) {
+    productionPrHint = `Send this to ${stagingLabel} and get QA approval first.`;
+  } else if (productionPrOpen) {
+    productionPrHint = `PR already open into ${productionLabel}. Merge it to ship — Jira will move to Done.`;
+  } else if (onOrPastProduction) {
+    productionPrHint = `Already merged to ${productionLabel}.`;
+  } else if (!hasProductionChanges) {
+    productionPrHint = `No changes compared to ${productionLabel} — nothing new to PR.`;
+  }
 
   return (
     <aside className={styles.drawerAside}>
@@ -120,13 +205,13 @@ export default function TicketDrawer({ ticketKey, onClose }) {
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {ticket.pipelineState === 'conflict' && (
+        {state === 'conflict' && (
           <div style={{ padding: '11px 12px', border: '1px solid var(--danger-border)', borderRadius: 'var(--r-card)', background: 'var(--danger-fill)' }}>
             <div className="eyebrow" style={{ color: 'var(--danger-text)' }}>Last merge attempt failed</div>
             <div style={{ fontSize: 12, color: 'var(--n-body)', marginTop: 6 }}>
               {lastFailure?.detail || "This pull request couldn't be merged cleanly."} If the PR still exists
               and is fixable on GitHub, click Retry merge below. If it's gone or was closed, retrying won't
-              help — recreate the branch and transition the ticket again in Jira to open a fresh PR instead.
+              help — recreate the branch and open a fresh PR instead.
             </div>
           </div>
         )}
@@ -176,8 +261,136 @@ export default function TicketDrawer({ ticketKey, onClose }) {
           </div>
         </div>
 
+        <div style={{ border: '1px solid var(--n-border)', borderRadius: 'var(--r-card)', padding: 11, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div>
+            <div className="eyebrow">Path to production</div>
+            <div style={{ fontSize: 11, color: 'var(--n-muted)', marginTop: 4 }}>
+              Branch from {productionLabel} → work → staging (QA) → production
+            </div>
+          </div>
+
+          <PathStep
+            n="1"
+            title={`Create a branch from ${productionLabel}`}
+            hint={hasBranch ? `Already exists: ${ticket.branch}` : 'Cut a feature branch from production. Jira moves to In Progress.'}
+            done={hasBranch}
+          >
+            <input
+              className="mono"
+              value={branchName}
+              onChange={(e) => setBranchName(e.target.value)}
+              placeholder={`feat/${ticket.key}`}
+              disabled={creatingBranch || hasBranch || !canResolveRepo}
+              style={{
+                width: '100%',
+                height: 28,
+                padding: '0 8px',
+                border: '1px solid var(--n-border)',
+                borderRadius: 'var(--r-input)',
+                background: 'var(--n-surface)',
+                color: 'var(--n-body)',
+                fontSize: 11,
+                opacity: hasBranch ? 0.65 : 1,
+              }}
+            />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={handleCreateBranch}
+                disabled={creatingBranch || hasBranch || !canResolveRepo || !branchName.trim()}
+              >
+                {creatingBranch ? 'Creating…' : hasBranch ? 'Already exists' : `Create from ${productionLabel}`}
+              </button>
+            </div>
+            {!canResolveRepo && !hasBranch && (
+              <div style={{ fontSize: 11, color: 'var(--n-muted)', marginTop: 4 }}>
+                Set a Jira project key on the matching watched repo (or watch exactly one repo) so this
+                ticket can be resolved first.
+              </div>
+            )}
+            {branchError && <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 4 }}>{branchError}</div>}
+          </PathStep>
+
+          <PathStep
+            n="2"
+            title="Do the work"
+            hint={
+              hasBranch
+                ? `Commit and push to ${ticket.branch}. Come back here when it's ready for QA.`
+                : 'Available once the branch exists.'
+            }
+            done={stagingPrOpen || onOrPastStaging}
+          />
+
+          <PathStep n="3" title={`Put on ${stagingLabel} for QA`} hint={stagingPrHint} done={onOrPastStaging}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              {canOpenStagingPr && (
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => handleOpenPr('staging')}
+                  disabled={openingPr != null}
+                >
+                  {openingPr === 'staging' ? 'Opening…' : `Open PR into ${stagingLabel}`}
+                </button>
+              )}
+              {(stagingPrOpen || onOrPastStaging) && !canOpenStagingPr && (
+                <button type="button" className="btn btn-primary" disabled>
+                  Already exists
+                </button>
+              )}
+              {stagingPrOpen && (
+                <button type="button" className="btn btn-primary" onClick={handleMerge} disabled={merging}>
+                  {merging ? 'Merging…' : `Merge PR into ${stagingLabel}`}
+                </button>
+              )}
+            </div>
+          </PathStep>
+
+          <PathStep
+            n="4"
+            title={`After QA approves, put on ${productionLabel}`}
+            hint={productionPrHint}
+            done={onOrPastProduction}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              {canOpenProductionPr && (
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => handleOpenPr('production')}
+                  disabled={openingPr != null}
+                >
+                  {openingPr === 'production' ? 'Opening…' : `Open PR into ${productionLabel}`}
+                </button>
+              )}
+              {(productionPrOpen || onOrPastProduction) && !canOpenProductionPr && (
+                <button type="button" className="btn btn-primary" disabled>
+                  Already exists
+                </button>
+              )}
+              {productionPrOpen && (
+                <button type="button" className="btn btn-primary" onClick={handleMerge} disabled={merging}>
+                  {merging ? 'Merging…' : `Merge PR into ${productionLabel}`}
+                </button>
+              )}
+            </div>
+          </PathStep>
+
+          {state === 'conflict' && !stagingPrOpen && !productionPrOpen && (
+            <div>
+              <button type="button" className="btn btn-primary" onClick={handleMerge} disabled={merging}>
+                {merging ? 'Merging…' : 'Retry merge'}
+              </button>
+            </div>
+          )}
+          {prError && <div style={{ fontSize: 11, color: 'var(--danger)' }}>{prError}</div>}
+          {mergeError && <div style={{ fontSize: 11, color: 'var(--danger)' }}>{mergeError}</div>}
+        </div>
+
         <div style={{ border: '1px solid var(--n-border)', borderRadius: 'var(--r-card)', padding: 11, display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div className="eyebrow">Actions</div>
+          <div className="eyebrow">Jira</div>
 
           <div>
             <div style={{ fontSize: 10, color: 'var(--n-muted)', marginBottom: 4 }}>Transition Jira status</div>
@@ -221,15 +434,6 @@ export default function TicketDrawer({ ticketKey, onClose }) {
               {commentError && <span style={{ fontSize: 11, color: 'var(--danger)' }}>{commentError}</span>}
             </div>
           </div>
-
-          {mergeLabel && (
-            <div>
-              <button type="button" className="btn btn-primary" onClick={handleMerge} disabled={merging}>
-                {merging ? 'Merging…' : mergeLabel}
-              </button>
-              {mergeError && <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 4 }}>{mergeError}</div>}
-            </div>
-          )}
         </div>
 
         <div>

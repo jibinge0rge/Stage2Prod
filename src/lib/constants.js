@@ -30,6 +30,8 @@ const JIRA_COMMENTS = Object.freeze({
   DEVELOP_PR_GONE: 'The pull request into production no longer exists on GitHub (closed or its branch was deleted). Recreate the branch and transition this ticket again in Jira to open a fresh one.',
   DEVELOP_SUCCESS: 'Merged into `develop` and branch deleted.',
   REJECTED: 'Feature rejected. Branch remains unmerged into develop.',
+  BRANCH_CREATED: (branchName, productionBranch) =>
+    `Created branch \`${branchName}\` from \`${productionBranch}\`.`,
 });
 
 // Short ref names, as displayed/stored in lock_events.ref_name. A lock key
@@ -46,6 +48,14 @@ function refKey(owner, name, shortRef) {
   return `${owner}/${name}#${shortRef}`;
 }
 
+// Destination Jira statuses we drive from git actions in the drawer.
+// Matched by transition name or by the transition's target status name.
+const JIRA_STATUSES = Object.freeze({
+  IN_PROGRESS: 'In Progress',
+  IN_QA: 'In QA',
+  DONE: 'Done',
+});
+
 const STATUS_HANDLER_MAP = Object.freeze({
   'Ready for QA': 'toStaging',
   'In QA': 'toStaging',
@@ -60,6 +70,7 @@ module.exports = {
   OUTCOMES,
   PIPELINE_STATES,
   JIRA_COMMENTS,
+  JIRA_STATUSES,
   SHORT_REF_STAGING,
   SHORT_REF_DEVELOP,
   refKey,

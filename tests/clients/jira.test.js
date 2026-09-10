@@ -94,6 +94,20 @@ describe('JiraClient', () => {
     expect(result).toEqual({ transitioned: true });
   });
 
+  it('transition matches a destination status name when the workflow transition is named differently', async () => {
+    nock(BASE)
+      .get('/rest/api/3/issue/PROJ-6/transitions')
+      .reply(200, {
+        transitions: [{ id: '21', name: 'Start Progress', to: { name: 'In Progress' } }],
+      });
+    nock(BASE)
+      .post('/rest/api/3/issue/PROJ-6/transitions', { transition: { id: '21' } })
+      .reply(204);
+
+    const result = await client.transition('PROJ-6', 'In Progress');
+    expect(result).toEqual({ transitioned: true });
+  });
+
   it('reports transition-not-available when the named transition does not exist', async () => {
     nock(BASE).get('/rest/api/3/issue/PROJ-5/transitions').reply(200, { transitions: [] });
     const result = await client.transition('PROJ-5', 'Needs Attention');

@@ -10,8 +10,13 @@ function buildTestCtx(overrides = {}) {
     getTransitions: vi.fn().mockResolvedValue([{ id: '1', name: 'Ready for QA' }, { id: '2', name: 'Done' }]),
     transition: vi.fn().mockResolvedValue({ transitioned: true }),
     addComment: vi.fn().mockResolvedValue({ commented: true }),
+    tryTransition: vi.fn().mockResolvedValue({ transitioned: true }),
   };
-  const repoResolver = { getClient: vi.fn(() => ({})) };
+  const repoResolver = {
+    getClient: vi.fn(() => ({})),
+    matchByProjectKeyOnly: vi.fn(() => null),
+    getMatcher: vi.fn(() => ({})),
+  };
   return { config, ticketsRepo, eventsRepo, cursorRepo, lockManager, reposRepo, poller, jira, repoResolver, logger: noopLogger, ...overrides };
 }
 
@@ -61,6 +66,35 @@ describe('GET /api/tickets', () => {
     expect(res.status).toBe(200);
     expect(res.body.timeline).toHaveLength(1);
     expect(res.body.timeline[0].title).toBe('Merged into staging');
+    expect(res.body.aheadOfStaging).toBe(0);
+    expect(res.body.aheadOfProduction).toBe(0);
+  });
+
+  it('GET /api/tickets/:key reports how far the feature branch is ahead of staging and production', async () => {
+    const ctx = buildTestCtx();
+    ctx.reposRepo.add('acme', 'widgets', { productionBranch: 'main', stagingBranch: 'qa' });
+    ctx.ticketsRepo.upsert({
+      key: 'PROJ-1',
+      summary: 'Fix login',
+      jiraStatus: 'In Development',
+      pipelineState: 'unmerged',
+      repoOwner: 'acme',
+      repoName: 'widgets',
+    });
+    ctx.ticketsRepo.setGithubFacts('PROJ-1', { branchName: 'feat/PROJ-1-login' });
+    ctx.repoResolver.getClient = vi.fn(() => ({
+      compareCommits: vi
+        .fn()
+        .mockImplementation(async (base) =>
+          base === 'qa' ? { aheadBy: 2, behindBy: 0 } : { aheadBy: 5, behindBy: 0 }
+        ),
+    }));
+    const app = createApp(ctx);
+
+    const res = await request(app).get('/api/tickets/PROJ-1');
+    expect(res.status).toBe(200);
+    expect(res.body.aheadOfStaging).toBe(2);
+    expect(res.body.aheadOfProduction).toBe(5);
   });
 
   it('404s for an unknown ticket key', async () => {
@@ -227,5 +261,184 @@ describe('POST /api/tickets/:key/merge', () => {
     expect(res.body.pipelineState).toBe('staging');
     expect(github.mergePr).toHaveBeenCalledWith(7, { mergeMethod: 'merge' });
     expect(github.deleteRef).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /api/tickets/:key/branch', () => {
+  it('401s without a bearer token', async () => {
+    const app = createApp(buildTestCtx());
+    const res = await request(app).post('/api/tickets/PROJ-1/branch').send({});
+    expect(res.status).toBe(401);
+  });
+
+  it('404s for an unknown ticket', async () => {
+    const app = createApp(buildTestCtx());
+    const res = await request(app)
+      .post('/api/tickets/NOPE-1/branch')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send({});
+    expect(res.status).toBe(404);
+  });
+
+  it('creates a branch from production and returns the updated ticket', async () => {
+    const ctx = buildTestCtx();
+    ctx.reposRepo.add('acme', 'widgets', { productionBranch: 'main', stagingBranch: 'qa' });
+    ctx.ticketsRepo.upsert({
+      key: 'PROJ-1',
+      summary: 'Fix login',
+      jiraStatus: 'In Development',
+      pipelineState: 'unmerged',
+      repoOwner: 'acme',
+      repoName: 'widgets',
+    });
+    const github = {
+      getRef: vi.fn(async (branch) => {
+        if (branch === 'main') return 'prodsha1';
+        const err = new Error('Not Found');
+        err.status = 404;
+        throw err;
+      }),
+      createRef: vi.fn().mockResolvedValue({ sha: 'prodsha1' }),
+    };
+    ctx.repoResolver.getClient = vi.fn(() => github);
+    ctx.repoResolver.matchByProjectKeyOnly = vi.fn(() => null);
+    const app = createApp(ctx);
+
+    const res = await request(app)
+      .post('/api/tickets/PROJ-1/branch')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send({ name: 'feat/PROJ-1-login' });
+
+    expect(res.status).toBe(201);
+    expect(res.body.branch).toBe('feat/PROJ-1-login');
+    expect(res.body.jiraStatus).toBe('In Progress');
+    expect(github.createRef).toHaveBeenCalledWith('feat/PROJ-1-login', 'prodsha1');
+    expect(ctx.jira.addComment).toHaveBeenCalled();
+    expect(ctx.jira.tryTransition).toHaveBeenCalledWith('PROJ-1', 'In Progress');
+  });
+
+  it('400s when the branch name does not contain the ticket key', async () => {
+    const ctx = buildTestCtx();
+    ctx.reposRepo.add('acme', 'widgets');
+    ctx.ticketsRepo.upsert({
+      key: 'PROJ-1',
+      jiraStatus: 'In Development',
+      pipelineState: 'unmerged',
+      repoOwner: 'acme',
+      repoName: 'widgets',
+    });
+    ctx.repoResolver.matchByProjectKeyOnly = vi.fn(() => null);
+    const app = createApp(ctx);
+
+    const res = await request(app)
+      .post('/api/tickets/PROJ-1/branch')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send({ name: 'feat/unrelated' });
+
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('POST /api/tickets/:key/pr', () => {
+  it('401s without a bearer token', async () => {
+    const app = createApp(buildTestCtx());
+    const res = await request(app).post('/api/tickets/PROJ-1/pr').send({ target: 'staging' });
+    expect(res.status).toBe(401);
+  });
+
+  it('404s for an unknown ticket', async () => {
+    const app = createApp(buildTestCtx());
+    const res = await request(app)
+      .post('/api/tickets/NOPE-1/pr')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send({ target: 'staging' });
+    expect(res.status).toBe(404);
+  });
+
+  it('opens a staging PR and returns the ticket in staging_queued', async () => {
+    const ctx = buildTestCtx();
+    ctx.reposRepo.add('acme', 'widgets', { productionBranch: 'main', stagingBranch: 'qa' });
+    ctx.ticketsRepo.upsert({
+      key: 'PROJ-1',
+      summary: 'Fix login',
+      jiraStatus: 'In Development',
+      pipelineState: 'unmerged',
+      repoOwner: 'acme',
+      repoName: 'widgets',
+    });
+    ctx.ticketsRepo.setGithubFacts('PROJ-1', { branchName: 'feat/PROJ-1-login' });
+    const github = {
+      createPr: vi.fn().mockResolvedValue({ number: 42, htmlUrl: 'https://x/42', headSha: 'headsha1' }),
+      compareCommits: vi.fn().mockResolvedValue({ aheadBy: 2, behindBy: 0 }),
+    };
+    ctx.repoResolver.getClient = vi.fn(() => github);
+    ctx.repoResolver.getMatcher = vi.fn(() => ({
+      findBranchForTicket: vi.fn().mockResolvedValue('feat/PROJ-1-login'),
+      findOpenPrForTicket: vi.fn().mockResolvedValue(null),
+    }));
+    const app = createApp(ctx);
+
+    const res = await request(app)
+      .post('/api/tickets/PROJ-1/pr')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send({ target: 'staging' });
+
+    expect(res.status).toBe(201);
+    expect(res.body.pipelineState).toBe('staging_queued');
+    expect(res.body.prNumber).toBe(42);
+    expect(res.body.jiraStatus).toBe('In QA');
+    expect(github.createPr).toHaveBeenCalledWith(expect.objectContaining({ base: 'qa', head: 'feat/PROJ-1-login' }));
+    expect(ctx.jira.tryTransition).toHaveBeenCalledWith('PROJ-1', 'In QA');
+  });
+
+  it('400s when the branch has no commits ahead of the target', async () => {
+    const ctx = buildTestCtx();
+    ctx.reposRepo.add('acme', 'widgets', { productionBranch: 'main', stagingBranch: 'qa' });
+    ctx.ticketsRepo.upsert({
+      key: 'PROJ-1',
+      jiraStatus: 'In Development',
+      pipelineState: 'unmerged',
+      repoOwner: 'acme',
+      repoName: 'widgets',
+    });
+    ctx.ticketsRepo.setGithubFacts('PROJ-1', { branchName: 'feat/PROJ-1-login' });
+    const github = {
+      createPr: vi.fn(),
+      compareCommits: vi.fn().mockResolvedValue({ aheadBy: 0, behindBy: 0 }),
+    };
+    ctx.repoResolver.getClient = vi.fn(() => github);
+    ctx.repoResolver.getMatcher = vi.fn(() => ({
+      findBranchForTicket: vi.fn().mockResolvedValue('feat/PROJ-1-login'),
+      findOpenPrForTicket: vi.fn().mockResolvedValue(null),
+    }));
+    const app = createApp(ctx);
+
+    const res = await request(app)
+      .post('/api/tickets/PROJ-1/pr')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send({ target: 'staging' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/no commits/i);
+    expect(github.createPr).not.toHaveBeenCalled();
+  });
+
+  it('400s when target is missing or invalid', async () => {
+    const ctx = buildTestCtx();
+    ctx.reposRepo.add('acme', 'widgets');
+    ctx.ticketsRepo.upsert({
+      key: 'PROJ-1',
+      jiraStatus: 'In Development',
+      pipelineState: 'unmerged',
+      repoOwner: 'acme',
+      repoName: 'widgets',
+    });
+    const app = createApp(ctx);
+
+    const res = await request(app)
+      .post('/api/tickets/PROJ-1/pr')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send({});
+    expect(res.status).toBe(400);
   });
 });

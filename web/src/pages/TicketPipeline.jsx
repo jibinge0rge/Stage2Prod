@@ -61,8 +61,8 @@ export default function TicketPipeline() {
 
       <TicketTable tickets={rows} selectedKey={selectedTicketKey} onSelect={openTicket} />
       <div style={{ fontSize: 11, color: 'var(--n-muted)' }}>
-        Rows are read-only records of what the service did. Select a ticket to see its Jira and GitHub sides
-        and to retry a merge.
+        Rows are read-only records of what the service did. Select a ticket to create a branch,
+        open a PR to staging or production, and merge when you're ready.
       </div>
     </div>
   );

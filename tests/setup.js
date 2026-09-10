@@ -37,9 +37,10 @@ const noopLogger = {
 };
 
 /** A repo-shaped ticketMatcher/github stub factory, for handler/route tests. */
-function fakeRepoResolver({ getClient, getMatcher } = {}) {
+function fakeRepoResolver({ getClient, getMatcher, matchByProjectKeyOnly } = {}) {
   return {
     resolveTicket: async () => ({ found: true, owner: 'acme', name: 'widgets' }),
+    matchByProjectKeyOnly: matchByProjectKeyOnly || (() => null),
     invalidateAll: () => {},
     getClient: getClient || (() => ({})),
     getMatcher: getMatcher || (() => ({})),

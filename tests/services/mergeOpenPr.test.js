@@ -16,7 +16,7 @@ function baseDeps({ pipelineState, prNumber = 42, branchName = 'feat/PROJ-1-thin
     mergePr: vi.fn().mockResolvedValue({ merged: true, sha: 'mergedsha1' }),
     deleteRef: vi.fn().mockResolvedValue({ deleted: true }),
   };
-  const jira = { addComment: vi.fn().mockResolvedValue({ commented: true }) };
+  const jira = { addComment: vi.fn().mockResolvedValue({ commented: true }), tryTransition: vi.fn().mockResolvedValue({ transitioned: true }) };
 
   return {
     ticketKey: 'PROJ-1',
@@ -45,6 +45,7 @@ describe('mergeOpenPr', () => {
     expect(deps.github.deleteRef).not.toHaveBeenCalled();
     expect(deps.ticketsRepo.get('PROJ-1').pipeline_state).toBe(PIPELINE_STATES.STAGING);
     expect(deps.jira.addComment).toHaveBeenCalledWith('PROJ-1', expect.stringContaining('staging'));
+    expect(deps.jira.tryTransition).not.toHaveBeenCalled();
   });
 
   it('merges a queued ticket into develop and deletes the branch', async () => {
@@ -57,6 +58,8 @@ describe('mergeOpenPr', () => {
     expect(deps.github.deleteRef).toHaveBeenCalledWith('feat/PROJ-1-thing');
     expect(deps.ticketsRepo.get('PROJ-1').pipeline_state).toBe(PIPELINE_STATES.DEVELOP);
     expect(deps.jira.addComment).toHaveBeenCalledWith('PROJ-1', expect.stringContaining('develop'));
+    expect(deps.jira.tryTransition).toHaveBeenCalledWith('PROJ-1', 'Done');
+    expect(deps.ticketsRepo.get('PROJ-1').jira_status).toBe('Done');
   });
 
   it('never calls mergePr with squash', async () => {
