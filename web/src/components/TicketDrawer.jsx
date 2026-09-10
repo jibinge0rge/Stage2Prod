@@ -8,6 +8,10 @@ import { pipelineStyle, checkStatusColor } from '../lib/styleMaps';
 const MERGE_TARGET_LABEL = {
   staging_queued: 'Merge PR into staging',
   queued: 'Merge PR into develop',
+  // Which branch a conflicted merge was headed for isn't known client-side
+  // (the backend re-checks the PR's real base branch on retry) — generic
+  // label until that resolves one way or the other.
+  conflict: 'Retry merge',
 };
 
 export default function TicketDrawer({ ticketKey, onClose }) {
@@ -55,10 +59,14 @@ export default function TicketDrawer({ ticketKey, onClose }) {
     setMergeError(null);
     try {
       await postJson(`/tickets/${ticketKey}/merge`, {});
-      await refresh();
     } catch (err) {
       setMergeError(err.message);
     } finally {
+      // Refresh either way: even a "failed" merge attempt can change the
+      // ticket's pipeline state server-side (e.g. a gone/closed PR clears
+      // it back to unmerged instead of leaving it stuck) — the drawer
+      // needs to reflect that, not just show the error on stale data.
+      await refresh();
       setMerging(false);
     }
   }
@@ -80,7 +88,21 @@ export default function TicketDrawer({ ticketKey, onClose }) {
 
   const jiraUrl = health?.jiraHost ? `https://${health.jiraHost}/browse/${ticket.key}` : null;
   const mergeLabel = MERGE_TARGET_LABEL[ticket.pipelineState];
+  // The PR shown here isn't always headed to production — a ticket still
+  // in staging_queued/staging has a PR (or merge) into the staging
+  // branch, not develop. Previously this always showed productionBranch
+  // regardless, which was wrong for every staging-bound PR.
+  const prTargetBranch =
+    ticket.pipelineState === 'staging_queued' || ticket.pipelineState === 'staging'
+      ? ticket.repo?.stagingBranch ?? 'staging'
+      : ticket.repo?.productionBranch ?? 'develop';
   const transitionOptions = (transitionsData?.transitions ?? []).map((t) => ({ value: t.name, label: t.name }));
+  // Show the real reason the last merge attempt failed (a genuine
+  // conflict, a closed PR, a deleted branch — these need different fixes)
+  // instead of assuming it was a content conflict, which it often isn't.
+  const lastFailure = ticket.pipelineState === 'conflict'
+    ? [...(ticket.timeline || [])].reverse().find((ev) => ev.title === 'Merge failed')
+    : null;
 
   return (
     <aside className={styles.drawerAside}>
@@ -100,10 +122,11 @@ export default function TicketDrawer({ ticketKey, onClose }) {
       <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
         {ticket.pipelineState === 'conflict' && (
           <div style={{ padding: '11px 12px', border: '1px solid var(--danger-border)', borderRadius: 'var(--r-card)', background: 'var(--danger-fill)' }}>
-            <div className="eyebrow" style={{ color: 'var(--danger-text)' }}>Comment posted to Jira</div>
+            <div className="eyebrow" style={{ color: 'var(--danger-text)' }}>Last merge attempt failed</div>
             <div style={{ fontSize: 12, color: 'var(--n-body)', marginTop: 6 }}>
-              This pull request couldn't be merged cleanly. Resolve the conflict on GitHub, then click Merge
-              here again.
+              {lastFailure?.detail || "This pull request couldn't be merged cleanly."} If the PR still exists
+              and is fixable on GitHub, click Retry merge below. If it's gone or was closed, retrying won't
+              help — recreate the branch and transition the ticket again in Jira to open a fresh PR instead.
             </div>
           </div>
         )}
@@ -142,7 +165,7 @@ export default function TicketDrawer({ ticketKey, onClose }) {
               <div>
                 <div style={{ fontSize: 10, color: 'var(--n-muted)' }}>Pull request</div>
                 <div style={{ fontSize: 12, color: 'var(--brand)' }}>
-                  {ticket.prNumber ? `#${ticket.prNumber} → ${ticket.repo?.productionBranch ?? 'develop'}` : '—'}
+                  {ticket.prNumber ? `#${ticket.prNumber} → ${prTargetBranch}` : '—'}
                 </div>
               </div>
               <div>

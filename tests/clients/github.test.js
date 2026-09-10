@@ -87,12 +87,30 @@ describe('GitHubClient', () => {
     expect(result).toEqual({ number: 5, htmlUrl: 'https://github.com/acme/widgets/pull/5', headSha: 'headsha1' });
   });
 
-  it('getPr returns mergeable/mergeableState/merged', async () => {
+  it('getPr returns state/mergeable/mergeableState/merged/base/head', async () => {
     nock(BASE)
       .get('/repos/acme/widgets/pulls/5')
-      .reply(200, { number: 5, mergeable: false, mergeable_state: 'dirty', merged: false, html_url: 'https://x/5' });
+      .reply(200, {
+        number: 5,
+        state: 'open',
+        mergeable: false,
+        mergeable_state: 'dirty',
+        merged: false,
+        base: { ref: 'staging' },
+        head: { ref: 'feat/x' },
+        html_url: 'https://x/5',
+      });
 
     const result = await client.getPr(5);
-    expect(result).toEqual({ number: 5, mergeable: false, mergeableState: 'dirty', merged: false, htmlUrl: 'https://x/5' });
+    expect(result).toEqual({
+      number: 5,
+      state: 'open',
+      mergeable: false,
+      mergeableState: 'dirty',
+      merged: false,
+      base: 'staging',
+      head: 'feat/x',
+      htmlUrl: 'https://x/5',
+    });
   });
 });

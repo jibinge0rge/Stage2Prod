@@ -18,11 +18,17 @@ async function resetStaging({ owner, name, productionBranch, stagingBranch, reme
 
     await github.updateRef(stagingBranch, productionSha, { force: true });
 
+    // Staging just got wiped, so whatever PR/check-status these tickets
+    // were pointing at is no longer relevant — clear it along with the
+    // state, or the drawer keeps showing a stale "PR #N" / frozen check
+    // status for a merge that no longer exists on staging.
     for (const t of ticketsRepo.listByPipelineStateAndRepo(PIPELINE_STATES.STAGING, owner, name)) {
       ticketsRepo.setPipelineState(t.ticket_key, PIPELINE_STATES.UNMERGED);
+      ticketsRepo.clearGithubFacts(t.ticket_key);
     }
     for (const t of ticketsRepo.listByPipelineStateAndRepo(PIPELINE_STATES.CONFLICT, owner, name)) {
       ticketsRepo.setPipelineState(t.ticket_key, PIPELINE_STATES.UNMERGED);
+      ticketsRepo.clearGithubFacts(t.ticket_key);
     }
 
     eventsRepo.insertEvent({

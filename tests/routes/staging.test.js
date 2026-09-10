@@ -62,6 +62,28 @@ describe('POST /api/staging/reset', () => {
     expect(res.body.error).toBe('unknown_repo');
   });
 
+  it('clears stale pr_number/check_status on tickets swept from staging/conflict back to unmerged', async () => {
+    const ctx = buildTestCtx();
+    ctx.ticketsRepo.upsert({ key: 'PROJ-1', jiraStatus: 'In QA', pipelineState: 'staging', repoOwner: REPO.owner, repoName: REPO.name });
+    ctx.ticketsRepo.setGithubFacts('PROJ-1', { prNumber: 1, prState: 'merged', checkStatus: 'passing', headSha: 'sha1' });
+    ctx.ticketsRepo.upsert({ key: 'PROJ-2', jiraStatus: 'In QA', pipelineState: 'conflict', repoOwner: REPO.owner, repoName: REPO.name });
+    ctx.ticketsRepo.setGithubFacts('PROJ-2', { prNumber: 4, prState: 'open', checkStatus: 'pending', headSha: 'sha2' });
+    const app = createApp(ctx);
+
+    const res = await request(app)
+      .post('/api/staging/reset')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send({ ...REPO, remergeInQa: false });
+
+    expect(res.status).toBe(200);
+    for (const key of ['PROJ-1', 'PROJ-2']) {
+      const row = ctx.ticketsRepo.get(key);
+      expect(row.pipeline_state).toBe('unmerged');
+      expect(row.pr_number).toBeNull();
+      expect(row.check_status).toBeNull();
+    }
+  });
+
   it('force-updates staging to develop and records a RESET event', async () => {
     const ctx = buildTestCtx();
     const app = createApp(ctx);

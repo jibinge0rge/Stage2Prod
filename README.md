@@ -25,10 +25,15 @@ dashboard:
   poll (`Poller.pollNow()`) so its effect (e.g. a PR opening) shows up right away instead of waiting for the
   next scheduled poll.
 - **Comment on Jira** — posts a plain comment to the ticket.
-- **Merge** — appears only once a PR is actually open and awaiting merge (pipeline state `staging_queued` or
-  `queued`); this is the only thing in the whole app that writes to `staging` or `develop`. A PR that can't
-  merge cleanly is caught here (GitHub still lets a conflicting PR be *created*, it just refuses to merge it)
-  and flips the ticket to `conflict`, same as before.
+- **Merge** — appears once a PR is open and awaiting merge (pipeline state `staging_queued`/`queued`), *or*
+  a previous attempt left the ticket in `conflict` (retryable, in case the PR was fixed on GitHub since).
+  This is the only thing in the whole app that writes to `staging` or `develop`. Before merging, it checks
+  the PR's live GitHub state and reacts differently depending on why it's not mergeable: a PR that's still
+  open but genuinely conflicting flips the ticket to `conflict` with a retry option; a PR that's been closed
+  or no longer exists (e.g. its branch was deleted) instead **clears the ticket back to `unmerged`** — since
+  retrying would never help there, it just waits for its next real Jira transition to open a fresh PR, rather
+  than sitting stuck. Either way the real reason is recorded on the event and shown in the drawer, not a
+  generic "conflict" message.
 
 Ticket Pipeline itself shows every currently-open ticket in your configured Jira project(s), not just ones
 that recently changed status — see **Choosing the JQL**.

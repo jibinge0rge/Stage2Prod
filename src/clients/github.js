@@ -124,7 +124,16 @@ class GitHubClient {
 
   async getPr(prNumber) {
     const data = await this._request('GET', `/repos/${this.owner}/${this.repo}/pulls/${prNumber}`);
-    return { number: data.number, mergeable: data.mergeable, mergeableState: data.mergeable_state, merged: data.merged, htmlUrl: data.html_url };
+    return {
+      number: data.number,
+      state: data.state, // 'open' | 'closed'
+      mergeable: data.mergeable,
+      mergeableState: data.mergeable_state,
+      merged: data.merged,
+      base: data.base.ref,
+      head: data.head.ref,
+      htmlUrl: data.html_url,
+    };
   }
 
   async compareCommits(base, head) {

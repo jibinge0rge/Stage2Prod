@@ -210,7 +210,11 @@ describe('POST /api/tickets/:key/merge', () => {
     ctx.reposRepo.add('acme', 'widgets', { productionBranch: 'main', stagingBranch: 'qa' });
     ctx.ticketsRepo.upsert({ key: 'PROJ-1', jiraStatus: 'In QA', pipelineState: 'staging_queued', repoOwner: 'acme', repoName: 'widgets' });
     ctx.ticketsRepo.setGithubFacts('PROJ-1', { prNumber: 7, branchName: 'feat/PROJ-1-thing' });
-    const github = { mergePr: vi.fn().mockResolvedValue({ merged: true, sha: 'sha1' }), deleteRef: vi.fn() };
+    const github = {
+      getPr: vi.fn().mockResolvedValue({ number: 7, state: 'open', merged: false, base: 'qa', head: 'feat/PROJ-1-thing', mergeable: true }),
+      mergePr: vi.fn().mockResolvedValue({ merged: true, sha: 'sha1' }),
+      deleteRef: vi.fn(),
+    };
     ctx.repoResolver.getClient = vi.fn(() => github);
     const app = createApp(ctx);
 

@@ -21,6 +21,22 @@ function withRepoParam(path, selectedRepoKey) {
   return `${path}${sep}repo=${encodeURIComponent(selectedRepoKey)}`;
 }
 
+function eventRepoKey(e) {
+  return e.repo ? `${e.repo.owner}/${e.repo.name}` : null;
+}
+
+/** Per repo, the timestamp (ms) of today's most recent staging reset, if any. */
+function latestResetByRepo(resetEvents) {
+  const map = new Map();
+  for (const e of resetEvents) {
+    const key = eventRepoKey(e);
+    if (!key) continue;
+    const ts = new Date(e.timestamp).getTime();
+    if (!map.has(key) || ts > map.get(key)) map.set(key, ts);
+  }
+  return map;
+}
+
 export default function Overview() {
   const navigate = useNavigate();
   const { selectedRepoKey } = useRepoFilter();
@@ -39,6 +55,14 @@ export default function Overview() {
     withRepoParam(`/events?outcome=MERGED&since=${encodeURIComponent(since)}&limit=200`, selectedRepoKey),
     { intervalMs: 30000 }
   );
+  // Staging is ephemeral — a reset wipes it, so a merge-to-staging that
+  // happened before the most recent reset shouldn't still count as
+  // "merged today" once it's been discarded. Merges to develop/production
+  // are permanent and unaffected by a staging reset.
+  const { data: resetTodayData, refresh: refreshResetToday } = useApi(
+    withRepoParam(`/events?outcome=RESET&since=${encodeURIComponent(since)}&limit=200`, selectedRepoKey),
+    { intervalMs: 30000 }
+  );
 
   const refreshAll = useCallback(() => {
     refreshHealth();
@@ -47,7 +71,8 @@ export default function Overview() {
     refreshUntracked();
     refreshRecent();
     refreshMergedToday();
-  }, [refreshHealth, refreshTickets, refreshBranches, refreshUntracked, refreshRecent, refreshMergedToday]);
+    refreshResetToday();
+  }, [refreshHealth, refreshTickets, refreshBranches, refreshUntracked, refreshRecent, refreshMergedToday, refreshResetToday]);
   useRegisterRefresh(refreshAll);
 
   const tickets = ticketsData?.tickets ?? [];
@@ -55,8 +80,14 @@ export default function Overview() {
   const awaitingDevelop = tickets.filter((t) => t.pipelineState === 'queued');
   const conflicts = tickets.filter((t) => t.pipelineState === 'conflict');
   const mergedEvents = mergedTodayData?.events ?? [];
+  const resetCutoffByRepo = latestResetByRepo(resetTodayData?.events ?? []);
   const mergedToDevelop = mergedEvents.filter((e) => e.action === 'merge:develop').length;
-  const mergedToStaging = mergedEvents.filter((e) => e.action === 'merge:staging').length;
+  const mergedToStaging = mergedEvents.filter((e) => {
+    if (e.action !== 'merge:staging') return false;
+    const cutoff = resetCutoffByRepo.get(eventRepoKey(e));
+    return cutoff == null || new Date(e.timestamp).getTime() > cutoff;
+  }).length;
+  const mergedTodayTotal = mergedToDevelop + mergedToStaging;
 
   const allRepoEntries = branchesData?.repos ?? [];
   const repoEntries =
@@ -83,7 +114,7 @@ export default function Overview() {
         />
         <KpiTile
           label="Merged today"
-          value={mergedEvents.length}
+          value={mergedTodayTotal}
           caption={`${mergedToDevelop} to develop, ${mergedToStaging} to staging`}
           valueColor="var(--success-text)"
         />

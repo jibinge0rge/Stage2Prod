@@ -53,6 +53,15 @@ function createTicketsRepo(db) {
   const setRepoStmt = db.prepare(
     'UPDATE tickets SET repo_owner = ?, repo_name = ?, updated_at = ? WHERE ticket_key = ?'
   );
+  // Plain SET, not COALESCE — unlike setGithubFacts (used for "here's a
+  // new/updated fact"), this is for "the PR this ticket pointed at is
+  // gone, stop showing it as if it still exists" (e.g. a closed/deleted
+  // PR discovered during a merge attempt). branch_name is left alone:
+  // it's still useful context (the name to recreate), not stale/wrong.
+  const clearGithubFactsStmt = db.prepare(`
+    UPDATE tickets SET pr_number = NULL, pr_state = NULL, check_status = NULL, head_sha = NULL, updated_at = ?
+    WHERE ticket_key = ?
+  `);
 
   /**
    * Merges an incoming (partial) ticket description with any existing
@@ -124,6 +133,9 @@ function createTicketsRepo(db) {
     },
     setRepo(ticketKey, owner, name) {
       setRepoStmt.run(owner, name, new Date().toISOString(), ticketKey);
+    },
+    clearGithubFacts(ticketKey) {
+      clearGithubFactsStmt.run(new Date().toISOString(), ticketKey);
     },
   };
 }

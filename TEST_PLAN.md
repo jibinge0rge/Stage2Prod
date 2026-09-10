@@ -118,7 +118,10 @@ Open any ticket from **Ticket pipeline** to get its drawer.
 ## 3. Conflict handling
 
 Conflict detection now happens at **merge time**, not when the PR is opened — GitHub will happily create a
-PR that can't merge cleanly, it just refuses the merge itself.
+PR that can't merge cleanly, it just refuses the merge itself. Before attempting the merge, Stage2Prod checks
+the PR's *live* state on GitHub and reacts differently depending on why it's not mergeable:
+
+**3a. Genuine conflict (PR still open, just not mergeable)**
 
 1. [ ] Create a feature branch whose merge into staging will conflict (edit the same file/line staging
        already has changes on).
@@ -128,10 +131,24 @@ PR that can't merge cleanly, it just refuses the merge itself.
 3. [ ] Open the drawer and click **Merge PR into staging**.
    - ✅ *This* is where it fails: Stage2Prod does **not** attempt to auto-resolve it. Pipeline state becomes
      `conflict`. Event log shows a `CONFLICT` outcome. Jira gets a comment saying the PR can't merge cleanly.
-     The drawer surfaces a clear error, not a raw GitHub error.
+     The drawer's banner shows the real reason (from the event's `detail`) and a **Retry merge** button.
    - ✅ **Overview** shows the red **Conflicts** KPI and conflict banner; ticket pipeline flags it.
-4. [ ] Resolve the conflict manually in GitHub (or discard by resetting staging, see §4), then click **Merge**
-       again from the drawer and confirm it now succeeds.
+4. [ ] Resolve the conflict manually in GitHub, then click **Retry merge** again from the drawer and confirm
+       it now succeeds.
+
+**3b. PR is gone or closed (not a real conflict — nothing to retry)**
+
+1. [ ] With a ticket sitting in `staging_queued`/`queued`, delete its PR's head branch on GitHub (or close
+       the PR directly) so the PR itself closes or becomes permanently unmergeable.
+2. [ ] Click **Merge** in the drawer.
+   - ✅ Stage2Prod checks the PR's live state first and recognizes it's gone/closed rather than treating it
+     as a generic conflict. Pipeline state clears back to **`unmerged`** (not stuck in `conflict`) — no dead-
+     end retry button, since retrying would never help. Jira gets a comment explaining the PR is gone and
+     that recreating the branch + transitioning the ticket again is the way forward.
+   - ✅ The drawer refreshes immediately (even though the request "failed") and shows the ticket back at
+     `Not merged`, with the error message explaining why, instead of leaving stale `conflict` state on screen.
+3. [ ] Recreate the branch and transition the ticket again (e.g. back through "Ready for QA") — confirm a
+       fresh PR opens normally, same as a ticket that had never hit this state.
 
 ---
 

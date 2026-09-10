@@ -22,10 +22,12 @@ const JIRA_COMMENTS = Object.freeze({
   STAGING_PR_OPENED: (prNumber, stagingBranch) =>
     `Pull request #${prNumber} opened into \`${stagingBranch}\`. Merge it from Stage2Prod when you're ready.`,
   STAGING_CONFLICT: 'This pull request cannot be merged into staging cleanly. Please resolve the conflict on GitHub, then merge from Stage2Prod again.',
+  STAGING_PR_GONE: 'The pull request into staging no longer exists on GitHub (closed or its branch was deleted). Recreate the branch and transition this ticket again in Jira to open a fresh one.',
   STAGING_SUCCESS: 'Merged into `staging` successfully. Ready for validation.',
   DEVELOP_PR_OPENED: (prNumber, productionBranch) =>
     `Pull request #${prNumber} opened into \`${productionBranch}\`. Merge it from Stage2Prod when you're ready.`,
   DEVELOP_CONFLICT: 'This pull request cannot be merged into production cleanly. Please resolve the conflict on GitHub, then merge from Stage2Prod again.',
+  DEVELOP_PR_GONE: 'The pull request into production no longer exists on GitHub (closed or its branch was deleted). Recreate the branch and transition this ticket again in Jira to open a fresh one.',
   DEVELOP_SUCCESS: 'Merged into `develop` and branch deleted.',
   REJECTED: 'Feature rejected. Branch remains unmerged into develop.',
 });
