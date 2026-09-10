@@ -91,6 +91,20 @@ describe('POST /api/repos', () => {
     expect(ctx.reposRepo.get('acme', 'widgets')).toBeNull();
   });
 
+  it('persists an explicit jiraProjectKey', async () => {
+    nock(GITHUB_API).get('/repos/acme/widgets').reply(200, { id: 1, default_branch: 'main' });
+    const ctx = buildTestCtx();
+    const app = createApp(ctx);
+
+    const res = await request(app)
+      .post('/api/repos')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send({ owner: 'acme', name: 'widgets', jiraProjectKey: 'PROJ' });
+
+    expect(res.status).toBe(201);
+    expect(res.body.repo).toMatchObject({ jiraProjectKey: 'PROJ' });
+  });
+
   it('404s and does not add the repo when GitHub reports it does not exist', async () => {
     nock(GITHUB_API).get('/repos/acme/ghost').reply(404);
     const ctx = buildTestCtx();
@@ -148,6 +162,48 @@ describe('PATCH /api/repos/:owner/:name', () => {
 
     expect(res.status).toBe(400);
     expect(ctx.reposRepo.get('acme', 'widgets').productionBranch).toBe('develop');
+  });
+
+  it('sets a jiraProjectKey on a watched repo', async () => {
+    const ctx = buildTestCtx();
+    ctx.reposRepo.add('acme', 'widgets');
+    const app = createApp(ctx);
+
+    const res = await request(app)
+      .patch('/api/repos/acme/widgets')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send({ jiraProjectKey: 'PROJ' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.repo.jiraProjectKey).toBe('PROJ');
+  });
+
+  it('clears jiraProjectKey when sent as an empty string', async () => {
+    const ctx = buildTestCtx();
+    ctx.reposRepo.add('acme', 'widgets', { jiraProjectKey: 'PROJ' });
+    const app = createApp(ctx);
+
+    const res = await request(app)
+      .patch('/api/repos/acme/widgets')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send({ jiraProjectKey: '' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.repo.jiraProjectKey).toBeNull();
+  });
+
+  it('leaves jiraProjectKey unchanged when omitted from the request body', async () => {
+    const ctx = buildTestCtx();
+    ctx.reposRepo.add('acme', 'widgets', { jiraProjectKey: 'PROJ' });
+    const app = createApp(ctx);
+
+    const res = await request(app)
+      .patch('/api/repos/acme/widgets')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send({ productionBranch: 'main' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.repo.jiraProjectKey).toBe('PROJ');
   });
 });
 

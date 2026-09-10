@@ -90,4 +90,45 @@ describe('reposRepo', () => {
     repos.update('acme', 'widgets', { stagingBranch: 'staging2' });
     expect(repos.get('acme', 'widgets')).toMatchObject({ productionBranch: 'main', stagingBranch: 'staging2' });
   });
+
+  it('jiraProjectKey defaults to null when not specified', () => {
+    const repos = freshRepo();
+    repos.add('acme', 'widgets');
+    expect(repos.get('acme', 'widgets').jiraProjectKey).toBeNull();
+  });
+
+  it('persists a jiraProjectKey given at add time', () => {
+    const repos = freshRepo();
+    repos.add('acme', 'widgets', { jiraProjectKey: 'PROJ' });
+    expect(repos.get('acme', 'widgets').jiraProjectKey).toBe('PROJ');
+  });
+
+  it('update() sets a jiraProjectKey that was not there before', () => {
+    const repos = freshRepo();
+    repos.add('acme', 'widgets');
+    repos.update('acme', 'widgets', { jiraProjectKey: 'PROJ' });
+    expect(repos.get('acme', 'widgets').jiraProjectKey).toBe('PROJ');
+  });
+
+  it('update() omitting jiraProjectKey leaves it unchanged', () => {
+    const repos = freshRepo();
+    repos.add('acme', 'widgets', { jiraProjectKey: 'PROJ' });
+    repos.update('acme', 'widgets', { productionBranch: 'main' });
+    expect(repos.get('acme', 'widgets').jiraProjectKey).toBe('PROJ');
+  });
+
+  it('update() with an empty-string jiraProjectKey clears it back to null', () => {
+    const repos = freshRepo();
+    repos.add('acme', 'widgets', { jiraProjectKey: 'PROJ' });
+    repos.update('acme', 'widgets', { jiraProjectKey: '' });
+    expect(repos.get('acme', 'widgets').jiraProjectKey).toBeNull();
+  });
+
+  it('re-adding a previously removed repo preserves its jiraProjectKey rather than resetting it', () => {
+    const repos = freshRepo();
+    repos.add('acme', 'widgets', { jiraProjectKey: 'PROJ' });
+    repos.remove('acme', 'widgets');
+    repos.add('acme', 'widgets');
+    expect(repos.get('acme', 'widgets').jiraProjectKey).toBe('PROJ');
+  });
 });

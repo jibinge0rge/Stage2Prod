@@ -38,7 +38,8 @@ Fill in `.env`:
 | `GITHUB_TOKEN` | A GitHub PAT (classic or fine-grained) with `repo` scope, covering every repo you'll watch. |
 | `JIRA_HOST` | e.g. `your-domain.atlassian.net` |
 | `JIRA_EMAIL` / `JIRA_API_TOKEN` | See **Creating a Jira API token** below. |
-| `JIRA_JQL` | The JQL the poller watches — see **Choosing the JQL** below. |
+| `JIRA_JQL` | Fallback JQL, used only until any watched repo has a Jira project key configured — see **Choosing the JQL** below. |
+| `JIRA_POLL_CLAUSE` | The non-project part of the auto-built JQL once repos have project keys (default `status CHANGED AFTER -5m`). |
 | `API_TOKEN` | Bearer token required to call `POST /api/staging/reset` / `POST /api/repos` / `DELETE /api/repos/...`. Any local secret string. |
 | `DRY_RUN` | `true` to log intended git/Jira writes without performing them — safe for trying the UI out. |
 
@@ -96,11 +97,18 @@ curl -X POST http://localhost:3000/api/repos \
   -d '{"owner":"your-org","name":"your-repo"}'
 ```
 
-A Jira ticket key (e.g. `PROJ-101`) is matched against every watched repo's branches/open PRs the first time
-its status changes; whichever repo actually has a matching branch is remembered on the ticket from then on. If
-the same key matches branches in more than one watched repo, Stage2Prod does **not** guess — it logs an
-`ambiguous repo match` event and takes no git action until you rename the branch to be unique or stop watching
-one of the repos.
+Each watched repo can also be given a **Jira project key** (editable from the same Repositories page, or via
+`jiraProjectKey` in the `POST`/`PATCH` body) — the part of a ticket key before the hyphen, e.g. `PROJ` for
+`PROJ-101`. This is what actually resolves a ticket to a repo: if exactly one watched repo claims a ticket's
+project, that's its repo, no GitHub calls needed. If more than one repo shares a project key (e.g. a monorepo
+split across two GitHub repos), or no repo has claimed it yet, Stage2Prod falls back to searching branches/open
+PRs — narrowed to just the repos sharing that project key when there are any, otherwise every watched repo —
+and remembers whichever repo actually matched from then on. If that search still matches more than one repo,
+Stage2Prod does **not** guess — it logs an `ambiguous repo match` event and takes no git action until you
+rename the branch to be unique, set distinguishing Jira project keys, or stop watching one of the repos.
+
+A repo with no Jira project key configured shows a **no Jira project** warning on the Repositories page —
+its tickets won't be included in what the poller fetches from Jira at all (see **Choosing the JQL** below).
 
 ## Untracked changes
 
@@ -157,17 +165,23 @@ Notes:
 
 ## Choosing the JQL
 
-The poller runs `POST /rest/api/3/search/jql` with `JIRA_JQL` every `POLL_INTERVAL_MS` (default 60000),
-paginating via `nextPageToken` if a poll matches more than 100 issues. A JQL like:
+The poller runs `POST /rest/api/3/search/jql` every `POLL_INTERVAL_MS` (default 60000), paginating via
+`nextPageToken` if a poll matches more than 100 issues. The JQL itself is built one of two ways
+(`src/poller/jql.js`), visible at any time via `GET /api/health`'s `jiraJql` field or the **Rules & polling**
+page:
 
-```
-project = PROJ AND status CHANGED AFTER -5m ORDER BY updated ASC
-```
+- **No watched repo has a Jira project key yet** — `JIRA_JQL` is used verbatim (the single-project default:
+  `project = PROJ AND status CHANGED AFTER -5m ORDER BY updated ASC`). This is what a fresh install runs
+  before you've configured any repo's Jira project.
+- **At least one watched repo has a Jira project key** — the poller instead builds
+  `project in ("KEY1", "KEY2", ...) AND {JIRA_POLL_CLAUSE} ORDER BY updated ASC` from the union of every
+  watched repo's configured project key. A repo with no project key configured contributes nothing to this
+  list, so its tickets simply won't come back from Jira until you set one.
 
-- Scope it to the project(s) you want Stage2Prod to act on.
-- `status CHANGED AFTER -5m` keeps each poll's result set small; the poller still diffs against its own
-  persisted `last_seen_status` per ticket, so a wider window (or a restart) never re-fires an already-handled
-  transition or replays anything already actioned.
+Either way:
+- `status CHANGED AFTER -5m` (the default `JIRA_POLL_CLAUSE`) keeps each poll's result set small; the poller
+  still diffs against its own persisted `last_seen_status` per ticket, so a wider window (or a restart) never
+  re-fires an already-handled transition or replays anything already actioned.
 - `ORDER BY updated ASC` isn't required (the poller re-sorts by `fields.updated` before processing) but keeps
   the raw response readable if you're inspecting it by hand.
 

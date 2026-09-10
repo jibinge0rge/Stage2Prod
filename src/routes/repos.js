@@ -10,7 +10,7 @@ function createReposRouter({ config, reposRepo }) {
   });
 
   router.post('/repos', requireApiToken, async (req, res, next) => {
-    const { owner, name } = req.body || {};
+    const { owner, name, jiraProjectKey } = req.body || {};
     let { productionBranch, stagingBranch } = req.body || {};
     if (!owner || !name) {
       return res.status(400).json({ error: 'bad_request', message: '"owner" and "name" are required' });
@@ -25,7 +25,7 @@ function createReposRouter({ config, reposRepo }) {
       if (productionBranch === stagingBranch) {
         return res.status(400).json({ error: 'bad_request', message: 'productionBranch and stagingBranch must be different' });
       }
-      const repo = reposRepo.add(owner, name, { productionBranch, stagingBranch });
+      const repo = reposRepo.add(owner, name, { productionBranch, stagingBranch, jiraProjectKey });
       return res.status(201).json({ repo });
     } catch (err) {
       return next(err);
@@ -37,14 +37,14 @@ function createReposRouter({ config, reposRepo }) {
     if (!reposRepo.isActive(owner, name)) {
       return res.status(404).json({ error: 'not_found', message: `${owner}/${name} is not a watched repo` });
     }
-    const { productionBranch, stagingBranch } = req.body || {};
+    const { productionBranch, stagingBranch, jiraProjectKey } = req.body || {};
     const current = reposRepo.get(owner, name);
     const nextProduction = productionBranch || current.productionBranch;
     const nextStaging = stagingBranch || current.stagingBranch;
     if (nextProduction === nextStaging) {
       return res.status(400).json({ error: 'bad_request', message: 'productionBranch and stagingBranch must be different' });
     }
-    const repo = reposRepo.update(owner, name, { productionBranch, stagingBranch });
+    const repo = reposRepo.update(owner, name, { productionBranch, stagingBranch, jiraProjectKey });
     return res.json({ repo });
   });
 

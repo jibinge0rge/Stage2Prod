@@ -78,6 +78,42 @@ describe('repoResolver', () => {
     expect(result).toEqual({ found: true, owner: 'acme', name: 'new-home' });
   });
 
+  it('resolves via the Jira project key alone, without any GitHub calls, when exactly one repo claims it', async () => {
+    const widgetsClient = branchGithub(['main']); // no branch matches — proves this isn't why it resolved
+    const { resolver, reposRepo } = buildResolver({ 'acme/widgets': widgetsClient });
+    reposRepo.add('acme', 'widgets', { jiraProjectKey: 'PROJ' });
+
+    const result = await resolver.resolveTicket('PROJ-1', null);
+    expect(result).toEqual({ found: true, owner: 'acme', name: 'widgets' });
+    expect(widgetsClient.listBranches).not.toHaveBeenCalled();
+  });
+
+  it('narrows the branch/PR search to repos sharing a Jira project key instead of searching every watched repo', async () => {
+    const otherClient = branchGithub(['main']);
+    const { resolver, reposRepo } = buildResolver({
+      'acme/widgets': branchGithub(['feat/PROJ-1-thing']),
+      'acme/sibling': branchGithub(['main']),
+      'acme/unrelated': otherClient,
+    });
+    reposRepo.add('acme', 'widgets', { jiraProjectKey: 'PROJ' });
+    reposRepo.add('acme', 'sibling', { jiraProjectKey: 'PROJ' });
+    reposRepo.add('acme', 'unrelated', { jiraProjectKey: 'OTHER' });
+
+    const result = await resolver.resolveTicket('PROJ-1', null);
+    expect(result).toEqual({ found: true, owner: 'acme', name: 'widgets' });
+    expect(otherClient.listBranches).not.toHaveBeenCalled();
+  });
+
+  it('falls back to searching every watched repo when no repo has a matching Jira project key', async () => {
+    const { resolver, reposRepo } = buildResolver({
+      'acme/widgets': branchGithub(['feat/PROJ-1-thing']),
+    });
+    reposRepo.add('acme', 'widgets', { jiraProjectKey: 'SOMETHINGELSE' });
+
+    const result = await resolver.resolveTicket('PROJ-1', null);
+    expect(result).toEqual({ found: true, owner: 'acme', name: 'widgets' });
+  });
+
   it('invalidateAll() clears every per-repo matcher cache', async () => {
     const client = branchGithub(['feat/PROJ-1-thing']);
     const { resolver, reposRepo } = buildResolver({ 'acme/widgets': client });

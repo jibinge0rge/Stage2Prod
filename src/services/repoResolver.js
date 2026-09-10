@@ -1,4 +1,5 @@
 const { createTicketMatcher } = require('./ticketMatcher');
+const { projectKeyFromTicket } = require('../lib/jiraKey');
 
 /**
  * Resolves which watched repo a Jira ticket's branch/PR actually lives in.
@@ -35,8 +36,21 @@ function createRepoResolver({ reposRepo, githubRegistry }) {
     }
 
     const activeRepos = reposRepo.list({ activeOnly: true });
+
+    // Fast path: the ticket's Jira project key maps to exactly one
+    // watched repo — no GitHub calls needed at all. If it maps to more
+    // than one (e.g. a monorepo split across GitHub repos sharing one
+    // Jira project), narrow the branch/PR search to just those instead
+    // of searching every watched repo.
+    const projectKey = projectKeyFromTicket(ticketKey);
+    const byProjectKey = activeRepos.filter((r) => r.jiraProjectKey === projectKey);
+    if (byProjectKey.length === 1) {
+      return { found: true, owner: byProjectKey[0].owner, name: byProjectKey[0].name };
+    }
+
+    const searchSpace = byProjectKey.length > 1 ? byProjectKey : activeRepos;
     const candidates = [];
-    for (const repo of activeRepos) {
+    for (const repo of searchSpace) {
       const matcher = getMatcher(repo.owner, repo.name);
       // eslint-disable-next-line no-await-in-loop
       const branch = await matcher.findBranchForTicket(ticketKey);

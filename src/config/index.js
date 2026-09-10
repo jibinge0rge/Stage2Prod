@@ -20,7 +20,11 @@ const config = Object.freeze({
   JIRA_HOST: process.env.JIRA_HOST || '',
   JIRA_EMAIL: process.env.JIRA_EMAIL || '',
   JIRA_API_TOKEN: process.env.JIRA_API_TOKEN || '',
+  // Used verbatim only until at least one watched repo has a Jira project
+  // key configured (see src/poller/jql.js) — at that point the poller
+  // builds its own `project in (...)` query from the repos instead.
   JIRA_JQL: process.env.JIRA_JQL || 'project = PROJ AND status CHANGED AFTER -5m ORDER BY updated ASC',
+  JIRA_POLL_CLAUSE: process.env.JIRA_POLL_CLAUSE || 'status CHANGED AFTER -5m',
   POLL_INTERVAL_MS: int(process.env.POLL_INTERVAL_MS, 60000),
   API_TOKEN: process.env.API_TOKEN || 'local-dev-token',
   DRY_RUN: bool(process.env.DRY_RUN, false),

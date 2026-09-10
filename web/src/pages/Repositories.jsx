@@ -74,10 +74,23 @@ function useRepoBranches(owner, name, cache, setCache, enabled = true) {
   };
 }
 
+function JiraProjectKeyInput({ value, onChange, title }) {
+  return (
+    <input
+      style={{ width: 110, height: 26, padding: '0 8px', border: '1px solid var(--n-border)', borderRadius: 'var(--r-input)', fontSize: 11, background: 'var(--n-surface)', color: 'var(--n-body)' }}
+      value={value}
+      onChange={(e) => onChange(e.target.value.toUpperCase())}
+      placeholder="PROJ"
+      title={title}
+    />
+  );
+}
+
 function WatchedRepoRow({ repo, onRemove, removing, onSaved, branchCache, setBranchCache }) {
   const [editing, setEditing] = useState(false);
   const [productionBranch, setProductionBranch] = useState(repo.productionBranch);
   const [stagingBranch, setStagingBranch] = useState(repo.stagingBranch);
+  const [jiraProjectKey, setJiraProjectKey] = useState(repo.jiraProjectKey || '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const { branches, loading, error: branchesError } = useRepoBranches(
@@ -96,7 +109,7 @@ function WatchedRepoRow({ repo, onRemove, removing, onSaved, branchCache, setBra
     setSaving(true);
     setError(null);
     try {
-      await patchJson(`/repos/${repo.owner}/${repo.name}`, { productionBranch, stagingBranch });
+      await patchJson(`/repos/${repo.owner}/${repo.name}`, { productionBranch, stagingBranch, jiraProjectKey });
       setEditing(false);
       onSaved();
     } catch (err) {
@@ -113,16 +126,27 @@ function WatchedRepoRow({ repo, onRemove, removing, onSaved, branchCache, setBra
           {repo.owner}/{repo.name}
         </span>
         {!editing && (
-          <span className="mono" style={{ fontSize: 11, color: 'var(--n-muted)' }}>
-            {repo.productionBranch} / {repo.stagingBranch}
-          </span>
+          <>
+            <span className="mono" style={{ fontSize: 11, color: 'var(--n-muted)' }}>
+              {repo.productionBranch} / {repo.stagingBranch}
+            </span>
+            {repo.jiraProjectKey ? (
+              <span className="mono badge" style={{ background: 'var(--n-fill-subtle)', color: 'var(--n-body)' }}>
+                Jira: {repo.jiraProjectKey}
+              </span>
+            ) : (
+              <span className="badge" style={{ background: 'var(--warning-fill)', color: 'var(--warning)' }} title="No Jira project key set — this repo's tickets won't be polled">
+                no Jira project
+              </span>
+            )}
+          </>
         )}
         <span style={{ fontSize: 11, color: 'var(--n-muted)' }}>
           watching since {new Date(repo.addedAt).toLocaleDateString()}
         </span>
         {!editing && (
           <button type="button" className="btn btn-plain" onClick={() => setEditing(true)}>
-            Edit branches
+            Edit
           </button>
         )}
         <button type="button" className="btn btn-outline" onClick={() => onRemove(repo)} disabled={removing}>
@@ -130,7 +154,7 @@ function WatchedRepoRow({ repo, onRemove, removing, onSaved, branchCache, setBra
         </button>
       </div>
       {editing && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, marginTop: 10, flexWrap: 'wrap' }}>
           <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 10, color: 'var(--n-muted)' }}>
             Production branch
             <BranchSelect
@@ -153,17 +177,21 @@ function WatchedRepoRow({ repo, onRemove, removing, onSaved, branchCache, setBra
               title="Staging branch"
             />
           </label>
-          <button type="button" className="btn btn-primary" onClick={save} disabled={saving} style={{ marginTop: 15 }}>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 10, color: 'var(--n-muted)' }}>
+            Jira project key
+            <JiraProjectKeyInput value={jiraProjectKey} onChange={setJiraProjectKey} title="Jira project key" />
+          </label>
+          <button type="button" className="btn btn-primary" onClick={save} disabled={saving}>
             {saving ? 'Saving…' : 'Save'}
           </button>
           <button
             type="button"
             className="btn btn-plain"
-            style={{ marginTop: 15 }}
             onClick={() => {
               setEditing(false);
               setProductionBranch(repo.productionBranch);
               setStagingBranch(repo.stagingBranch);
+              setJiraProjectKey(repo.jiraProjectKey || '');
               setError(null);
             }}
           >
@@ -181,6 +209,7 @@ function CandidateRow({ repo, pending, onAdd, branchCache, setBranchCache }) {
   const [productionBranch, setProductionBranch] = useState(repo.defaultBranch || 'develop');
   const [stagingBranch, setStagingBranch] = useState('staging');
   const [pickedStaging, setPickedStaging] = useState(false);
+  const [jiraProjectKey, setJiraProjectKey] = useState('');
 
   // Once the real branch list loads, upgrade the staging guess from the
   // generic 'staging' default to whatever this repo actually calls it —
@@ -223,13 +252,14 @@ function CandidateRow({ repo, pending, onAdd, branchCache, setBranchCache }) {
             }}
             title="Staging branch"
           />
+          <JiraProjectKeyInput value={jiraProjectKey} onChange={setJiraProjectKey} title="Jira project key (optional)" />
         </>
       )}
       <button
         type="button"
         className={repo.watched ? 'btn btn-outline' : 'btn btn-primary'}
         disabled={repo.watched || pending}
-        onClick={() => onAdd(repo, { productionBranch, stagingBranch })}
+        onClick={() => onAdd(repo, { productionBranch, stagingBranch, jiraProjectKey })}
       >
         {repo.watched ? 'Watching' : pending ? 'Adding…' : 'Watch'}
       </button>

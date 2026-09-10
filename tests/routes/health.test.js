@@ -23,7 +23,7 @@ describe('GET /api/health', () => {
     expect(res.body.poller.running).toBe(true);
     expect(res.body.github.rateLimitRemaining).toBe(4999);
     expect(res.body.watchedRepos).toEqual([
-      { owner: 'acme', name: 'widgets', productionBranch: 'main', stagingBranch: 'qa' },
+      { owner: 'acme', name: 'widgets', productionBranch: 'main', stagingBranch: 'qa', jiraProjectKey: null },
     ]);
     expect(Array.isArray(res.body.locks)).toBe(true);
     expect(res.body.locks.some((l) => l.ref === 'acme/widgets#refs/heads/qa')).toBe(true);
@@ -39,5 +39,24 @@ describe('GET /api/health', () => {
     expect(res.status).toBe(200);
     expect(res.body.watchedRepos).toEqual([]);
     expect(res.body.locks).toEqual([]);
+  });
+
+  it('jiraJql falls back to config.JIRA_JQL when no watched repo has a Jira project key', async () => {
+    const ctx = buildTestCtx();
+    ctx.reposRepo.add('acme', 'widgets');
+    const app = createApp(ctx);
+
+    const res = await request(app).get('/api/health');
+    expect(res.body.jiraJql).toBe(config.JIRA_JQL);
+  });
+
+  it('jiraJql is built from watched repos\' Jira project keys once any are configured', async () => {
+    const ctx = buildTestCtx();
+    ctx.reposRepo.add('acme', 'widgets', { jiraProjectKey: 'PROJ' });
+    const app = createApp(ctx);
+
+    const res = await request(app).get('/api/health');
+    expect(res.body.jiraJql).toBe(`project in ("PROJ") AND ${config.JIRA_POLL_CLAUSE} ORDER BY updated ASC`);
+    expect(res.body.watchedRepos[0].jiraProjectKey).toBe('PROJ');
   });
 });

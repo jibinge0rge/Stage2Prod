@@ -1,4 +1,5 @@
 const { diffIssues, extractSprintName } = require('./diff');
+const { buildPollJql } = require('./jql');
 const { dispatch } = require('../handlers');
 const { newCorrelationId } = require('../lib/correlationId');
 const { OUTCOMES } = require('../lib/constants');
@@ -47,7 +48,8 @@ class Poller {
     let ok = true;
     let errorMessage = null;
     try {
-      const searchResult = await this.jira.search(this.config.JIRA_JQL);
+      const jql = buildPollJql(this.reposRepo.list({ activeOnly: true }), this.config);
+      const searchResult = await this.jira.search(jql);
       const issues = searchResult.issues || [];
       this.repoResolver.invalidateAll();
 

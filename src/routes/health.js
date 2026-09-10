@@ -1,5 +1,6 @@
 const express = require('express');
 const { refKey } = require('../lib/constants');
+const { buildPollJql } = require('../poller/jql');
 
 function createHealthRouter({ config, cursorRepo, lockManager, poller, githubRegistry, reposRepo, jira }) {
   const router = express.Router();
@@ -18,8 +19,9 @@ function createHealthRouter({ config, cursorRepo, lockManager, poller, githubReg
         name: r.name,
         productionBranch: r.productionBranch,
         stagingBranch: r.stagingBranch,
+        jiraProjectKey: r.jiraProjectKey,
       })),
-      jiraJql: config.JIRA_JQL,
+      jiraJql: buildPollJql(activeRepos, config),
       poller: {
         running: poller.isRunning(),
         intervalMs: config.POLL_INTERVAL_MS,
