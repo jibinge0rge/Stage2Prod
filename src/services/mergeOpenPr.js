@@ -22,6 +22,43 @@ function targetFor(prBaseRef, { productionBranch, stagingBranch }) {
 }
 
 /**
+ * QA (or anyone who didn't open the PR) clicking Merge: GitHub will not
+ * let the author approve their own PR, but a different PAT can. Best-effort
+ * — a failed approve still tries the merge (unprotected branches, admin
+ * bypass, already-approved, etc.).
+ */
+async function approveIfNotAuthor({ github, pr, prNumber, log }) {
+  if (typeof github.getMe !== 'function' || typeof github.createReview !== 'function') {
+    return { approved: false, reason: 'no-client' };
+  }
+  const author = pr.author;
+  if (!author) return { approved: false, reason: 'no-author' };
+
+  let me;
+  try {
+    me = await github.getMe();
+  } catch (err) {
+    log?.warn?.({ prNumber, err: err.message }, 'could not resolve GitHub user for PR approval');
+    return { approved: false, reason: 'whoami-failed' };
+  }
+  if (!me?.login || me.login.toLowerCase() === String(author).toLowerCase()) {
+    return { approved: false, reason: 'same-author' };
+  }
+
+  try {
+    await github.createReview(prNumber, {
+      event: 'APPROVE',
+      body: 'Approved from Stage2Prod.',
+    });
+    log?.info?.({ prNumber, reviewer: me.login, author }, 'approved PR as a non-author before merge');
+    return { approved: true, reviewer: me.login };
+  } catch (err) {
+    log?.warn?.({ prNumber, err: err.message }, 'PR approve failed, continuing to merge');
+    return { approved: false, reason: err.message };
+  }
+}
+
+/**
  * The human-triggered merge action — the only place either staging or
  * production ever actually gets written to. `ensureStagingPrCore` /
  * `ensureDevelopPrCore` (the poller-driven handlers) only ever open a PR
@@ -159,6 +196,7 @@ async function mergeOpenPr({ ticketKey, repoOwner, repoName, productionBranch, s
 
   return lockManager.withLock(lockKey, `mergeOpenPr:${ticketKey}`, correlationId, async () => {
     try {
+      await approveIfNotAuthor({ github, pr, prNumber, log });
       const merged = await github.mergePr(prNumber, { mergeMethod: 'merge' });
 
       if (target === 'develop') {
@@ -204,7 +242,14 @@ async function mergeOpenPr({ ticketKey, repoOwner, repoName, productionBranch, s
       if (err.status === 405 || err.status === 409) {
         const comment = target === 'develop' ? JIRA_COMMENTS.DEVELOP_CONFLICT : JIRA_COMMENTS.STAGING_CONFLICT;
         await recordConflict(target, `GitHub refused to merge PR #${prNumber} into ${branchName} (${err.status}) — not mergeable.`, comment);
-        const conflictErr = new Error(`PR #${prNumber} can't be merged cleanly. Resolve the conflict on GitHub, then click Merge here again.`);
+        const githubDetail = err.message ? ` GitHub: ${err.message}` : '';
+        const blocked =
+          pr.mergeableState === 'blocked' || /review|approv|status check/i.test(err.message || '');
+        const conflictErr = new Error(
+          blocked
+            ? `PR #${prNumber} is blocked by GitHub branch protection (reviews or checks).${githubDetail} If you opened this PR, someone else must approve — GitHub will not let you approve your own PR.`
+            : `PR #${prNumber} can't be merged cleanly. Resolve the conflict on GitHub, then click Merge here again.`
+        );
         conflictErr.status = 409;
         throw conflictErr;
       }
@@ -213,4 +258,4 @@ async function mergeOpenPr({ ticketKey, repoOwner, repoName, productionBranch, s
   });
 }
 
-module.exports = { mergeOpenPr, MergeNotReadyError };
+module.exports = { mergeOpenPr, MergeNotReadyError, approveIfNotAuthor };

@@ -187,7 +187,7 @@ export default function TicketDrawer({ ticketKey, onClose }) {
   const canOpenProductionPr = hasBranch && state === 'staging' && hasProductionChanges;
   let stagingPrHint = `Opens a pull request. Merge it onto ${stagingLabel} when you're ready — that moves Jira to In QA.`;
   if (!hasBranch) stagingPrHint = 'Create a branch first, then do the work, then open this PR.';
-  else if (stagingPrOpen) stagingPrHint = `PR already open into ${stagingLabel}. Merge it for QA, or close it to go back.`;
+  else if (stagingPrOpen) stagingPrHint = `PR already open into ${stagingLabel}. Merge (QA can approve+merge if they didn't open it), or close it to go back.`;
   else if (onOrPastStaging) stagingPrHint = `Already on ${stagingLabel}.`;
   else if (!hasStagingChanges) {
     stagingPrHint = `No changes compared to ${stagingLabel} yet — push commits to this branch first.`;
@@ -197,7 +197,7 @@ export default function TicketDrawer({ ticketKey, onClose }) {
   if (!onOrPastStaging && !productionPrOpen) {
     productionPrHint = `Send this to ${stagingLabel} and get QA approval first.`;
   } else if (productionPrOpen) {
-    productionPrHint = `PR already open into ${productionLabel}. Merge it to ship, or close it to stay on ${stagingLabel}.`;
+    productionPrHint = `PR already open into ${productionLabel}. Merge to ship (approves first if you're not the author), or close it to stay on ${stagingLabel}.`;
   } else if (onOrPastProduction) {
     productionPrHint = `Already merged to ${productionLabel}.`;
   } else if (!hasProductionChanges) {

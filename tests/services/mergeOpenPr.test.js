@@ -190,4 +190,69 @@ describe('mergeOpenPr', () => {
 
     expect(order).toEqual(['merge-start', 'merge-end', 'merge-start', 'merge-end']);
   });
+
+  it('approves then merges when the PAT is not the PR author (QA merging a developer PR)', async () => {
+    const deps = baseDeps({ pipelineState: PIPELINE_STATES.STAGING_QUEUED });
+    deps.github.getPr = vi.fn().mockResolvedValue({
+      number: 42,
+      state: 'open',
+      merged: false,
+      base: 'qa',
+      head: 'feat/PROJ-1-thing',
+      author: 'developer',
+      mergeable: true,
+      mergeableState: 'blocked',
+    });
+    deps.github.getMe = vi.fn().mockResolvedValue({ login: 'qa-person' });
+    deps.github.createReview = vi.fn().mockResolvedValue({ id: 1, state: 'APPROVED' });
+
+    await mergeOpenPr(deps);
+
+    expect(deps.github.createReview).toHaveBeenCalledWith(42, {
+      event: 'APPROVE',
+      body: 'Approved from Stage2Prod.',
+    });
+    expect(deps.github.mergePr).toHaveBeenCalledWith(42, { mergeMethod: 'merge' });
+    expect(deps.ticketsRepo.get('PROJ-1').pipeline_state).toBe(PIPELINE_STATES.STAGING);
+  });
+
+  it('does not approve when the PAT is the PR author', async () => {
+    const deps = baseDeps({ pipelineState: PIPELINE_STATES.STAGING_QUEUED });
+    deps.github.getPr = vi.fn().mockResolvedValue({
+      number: 42,
+      state: 'open',
+      merged: false,
+      base: 'qa',
+      head: 'feat/PROJ-1-thing',
+      author: 'developer',
+      mergeable: true,
+    });
+    deps.github.getMe = vi.fn().mockResolvedValue({ login: 'developer' });
+    deps.github.createReview = vi.fn();
+
+    await mergeOpenPr(deps);
+
+    expect(deps.github.createReview).not.toHaveBeenCalled();
+    expect(deps.github.mergePr).toHaveBeenCalled();
+  });
+
+  it('still merges if approve fails (e.g. already approved or not permitted)', async () => {
+    const deps = baseDeps({ pipelineState: PIPELINE_STATES.STAGING_QUEUED });
+    deps.github.getPr = vi.fn().mockResolvedValue({
+      number: 42,
+      state: 'open',
+      merged: false,
+      base: 'qa',
+      head: 'feat/PROJ-1-thing',
+      author: 'developer',
+    });
+    deps.github.getMe = vi.fn().mockResolvedValue({ login: 'qa-person' });
+    const deny = new Error('Reviewers must have write access');
+    deny.status = 422;
+    deps.github.createReview = vi.fn().mockRejectedValue(deny);
+
+    await mergeOpenPr(deps);
+    expect(deps.github.mergePr).toHaveBeenCalled();
+    expect(deps.ticketsRepo.get('PROJ-1').pipeline_state).toBe(PIPELINE_STATES.STAGING);
+  });
 });

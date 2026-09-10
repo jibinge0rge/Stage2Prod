@@ -96,6 +96,21 @@ describe('GitHubClient', () => {
     expect(result).toEqual({ number: 5, state: 'closed' });
   });
 
+  it('getMe returns the authenticated user login', async () => {
+    nock(BASE).get('/user').reply(200, { login: 'qa-bot' });
+    const result = await client.getMe();
+    expect(result).toEqual({ login: 'qa-bot' });
+  });
+
+  it('createReview posts an approval on the pull', async () => {
+    nock(BASE)
+      .post('/repos/acme/widgets/pulls/5/reviews', { event: 'APPROVE', body: 'ok' })
+      .reply(200, { id: 99, state: 'APPROVED' });
+
+    const result = await client.createReview(5, { event: 'APPROVE', body: 'ok' });
+    expect(result).toEqual({ id: 99, state: 'APPROVED' });
+  });
+
   it('getPr returns state/mergeable/mergeableState/merged/base/head', async () => {
     nock(BASE)
       .get('/repos/acme/widgets/pulls/5')
@@ -108,6 +123,7 @@ describe('GitHubClient', () => {
         base: { ref: 'staging' },
         head: { ref: 'feat/x' },
         html_url: 'https://x/5',
+        user: { login: 'octocat' },
       });
 
     const result = await client.getPr(5);
@@ -120,6 +136,7 @@ describe('GitHubClient', () => {
       base: 'staging',
       head: 'feat/x',
       htmlUrl: 'https://x/5',
+      author: 'octocat',
     });
   });
 

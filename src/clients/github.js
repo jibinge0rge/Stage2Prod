@@ -13,7 +13,7 @@ class HttpError extends Error {
   }
 }
 
-const MUTATING_METHODS = ['createMerge', 'createPr', 'mergePr', 'closePr', 'deleteRef', 'updateRef', 'addLabel', 'createRef'];
+const MUTATING_METHODS = ['createMerge', 'createPr', 'mergePr', 'closePr', 'createReview', 'deleteRef', 'updateRef', 'addLabel', 'createRef'];
 
 class GitHubClient {
   /**
@@ -122,6 +122,11 @@ class GitHubClient {
     return { overall, combinedState, checkRuns: checkRunsList };
   }
 
+  async getMe() {
+    const data = await this._request('GET', '/user');
+    return { login: data.login };
+  }
+
   async getPr(prNumber) {
     const data = await this._request('GET', `/repos/${this.owner}/${this.repo}/pulls/${prNumber}`);
     return {
@@ -132,6 +137,7 @@ class GitHubClient {
       merged: data.merged,
       base: data.base.ref,
       head: data.head.ref,
+      author: data.user?.login ?? null,
       htmlUrl: data.html_url,
     };
   }
@@ -190,6 +196,13 @@ class GitHubClient {
     return { number: data.number, state: data.state };
   }
 
+  async createReview(prNumber, { event, body } = {}) {
+    const payload = { event };
+    if (body) payload.body = body;
+    const data = await this._write('POST', `/repos/${this.owner}/${this.repo}/pulls/${prNumber}/reviews`, payload);
+    return { id: data.id, state: data.state };
+  }
+
   async deleteRef(branch) {
     try {
       await this._write('DELETE', `/repos/${this.owner}/${this.repo}/git/refs/heads/${branch}`);
@@ -234,6 +247,7 @@ function createGithubClient(config, { owner, repo, sharedRateLimit } = {}, dryRu
     createPr: () => ({ number: 0, htmlUrl: 'DRYRUN', headSha: 'DRYRUN' }),
     mergePr: () => ({ merged: true, sha: 'DRYRUN' }),
     closePr: () => ({ number: 0, state: 'closed' }),
+    createReview: () => ({ id: 0, state: 'APPROVED' }),
     deleteRef: () => ({ deleted: true }),
     updateRef: () => ({ sha: 'DRYRUN' }),
     addLabel: () => ({ added: true }),
