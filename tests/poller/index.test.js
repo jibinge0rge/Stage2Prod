@@ -66,4 +66,39 @@ describe('Poller._tick eager repo tagging', () => {
     const { events } = eventsRepo.list({ ticketKey: 'SCRUM-1' });
     expect(events).toHaveLength(0);
   });
+
+  it('joins a second pollNow into the in-flight tick instead of searching twice', async () => {
+    const db = createTestDb();
+    let release;
+    const searchStarted = new Promise((resolve) => {
+      release = resolve;
+    });
+    const jira = {
+      search: vi.fn().mockImplementation(async () => {
+        await searchStarted;
+        return { issues: [issue('SCRUM-1', 'To Do')] };
+      }),
+      rateLimit: null,
+    };
+    const repoResolver = { invalidateAll: vi.fn(), matchByProjectKeyOnly: vi.fn(() => null) };
+    const { ticketsRepo, eventsRepo, cursorRepo, lockManager, reposRepo } = db;
+    const poller = new Poller({
+      jira,
+      repoResolver,
+      reposRepo,
+      config,
+      ticketsRepo,
+      eventsRepo,
+      cursorRepo,
+      lockManager,
+      logger: noopLogger,
+    });
+
+    const first = poller.pollNow();
+    const second = poller.pollNow();
+    release();
+    await Promise.all([first, second]);
+
+    expect(jira.search).toHaveBeenCalledTimes(1);
+  });
 });

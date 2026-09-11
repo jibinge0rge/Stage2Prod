@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import styles from '../layout/AppShell.module.css';
 import { useApi, postJson } from '../lib/api';
+import { useRegisterRefresh } from '../lib/useRegisterRefresh';
 import { StateBadge } from './Badge';
 import CustomSelect from './CustomSelect';
 import { pipelineStyle, checkStatusColor } from '../lib/styleMaps';
@@ -162,11 +163,12 @@ export default function TicketDrawer({ ticketKey, onClose }) {
     setBranchError(null);
   }, [ticket?.key, ticket?.branch, ticket?.summary]);
 
-  async function refreshTicket() {
+  const refreshTicket = useCallback(async () => {
     await refresh();
     await refreshTransitions();
     await refreshPulls();
-  }
+  }, [refresh, refreshTransitions, refreshPulls]);
+  useRegisterRefresh(refreshTicket);
 
   async function handleTransition(name) {
     if (!name) return;

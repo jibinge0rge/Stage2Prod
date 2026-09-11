@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { postJson } from '../lib/api';
 
@@ -10,21 +10,49 @@ export function AppProvider({ children }) {
   const [remergeInQa, setRemergeInQa] = useState(true);
   const [toast, setToast] = useState('');
   const [resetting, setResetting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [selectedTicketKey, setSelectedTicketKey] = useState(null);
   const toastTimer = useRef(null);
-  const refreshRef = useRef(null);
+  const refreshers = useRef(new Set());
   const healthRefreshRef = useRef(null);
 
   const openTicket = useCallback((key) => setSelectedTicketKey(key), []);
   const closeTicket = useCallback(() => setSelectedTicketKey(null), []);
 
   const registerRefresh = useCallback((fn) => {
-    refreshRef.current = fn;
+    if (!fn) return () => {};
+    refreshers.current.add(fn);
+    return () => refreshers.current.delete(fn);
   }, []);
 
-  const syncNow = useCallback(() => {
-    refreshRef.current?.();
+  const runPageRefresh = useCallback(() => {
+    for (const fn of refreshers.current) fn();
   }, []);
+
+  const showToast = useCallback((message) => {
+    setToast(message);
+    clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(''), 4000);
+  }, []);
+
+  const syncNow = useCallback(async () => {
+    setSyncing(true);
+    try {
+      await postJson('/sync', {});
+    } catch (err) {
+      showToast(`Sync failed: ${err.message}`);
+    } finally {
+      runPageRefresh();
+      healthRefreshRef.current?.();
+      setSyncing(false);
+    }
+  }, [runPageRefresh, showToast]);
+
+  // Hard refresh / first load: pull Jira into the local DB immediately
+  // instead of waiting up to POLL_INTERVAL_MS for the timer.
+  useEffect(() => {
+    syncNow();
+  }, [syncNow]);
 
   // Separate from registerRefresh/syncNow (the per-page "Sync now" target):
   // AppShell's sidebar (watched-repo list, lock state) is always mounted
@@ -44,12 +72,6 @@ export function AppProvider({ children }) {
   const closeReset = useCallback(() => setResetTarget(null), []);
   const toggleRemerge = useCallback(() => setRemergeInQa((v) => !v), []);
 
-  const showToast = useCallback((message) => {
-    setToast(message);
-    clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(''), 4000);
-  }, []);
-
   const confirmReset = useCallback(async () => {
     if (!resetTarget) return undefined;
     setResetting(true);
@@ -64,7 +86,7 @@ export function AppProvider({ children }) {
           : `${repoLabel}: staging reset to develop ${result.newHeadSha ? result.newHeadSha.slice(0, 7) : ''}.`
       );
       navigate('/staging');
-      refreshRef.current?.();
+      runPageRefresh();
       return result;
     } catch (err) {
       // Not rethrown: confirmReset is wired directly to a button's onClick
@@ -76,7 +98,7 @@ export function AppProvider({ children }) {
     } finally {
       setResetting(false);
     }
-  }, [resetTarget, remergeInQa, navigate, showToast]);
+  }, [resetTarget, remergeInQa, navigate, showToast, runPageRefresh]);
 
   const value = {
     resetTarget,
@@ -89,6 +111,7 @@ export function AppProvider({ children }) {
     toast,
     registerRefresh,
     syncNow,
+    syncing,
     registerHealthRefresh,
     refreshHealth,
     selectedTicketKey,

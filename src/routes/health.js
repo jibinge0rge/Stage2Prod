@@ -1,6 +1,7 @@
 const express = require('express');
 const { refKey } = require('../lib/constants');
 const { buildPollJql } = require('../poller/jql');
+const { requireApiToken } = require('../middleware/auth');
 
 function createHealthRouter({ config, cursorRepo, lockManager, poller, githubRegistry, reposRepo, jira }) {
   const router = express.Router();
@@ -46,6 +47,24 @@ function createHealthRouter({ config, cursorRepo, lockManager, poller, githubReg
       dryRun: config.DRY_RUN,
       uptimeSeconds: Math.round(process.uptime()),
     });
+  });
+
+  router.post('/sync', requireApiToken, async (req, res, next) => {
+    try {
+      await poller.pollNow();
+      const pollState = cursorRepo.get();
+      res.json({
+        polled: true,
+        poller: {
+          lastPollAt: pollState.last_poll_at,
+          lastPollOk: pollState.last_poll_ok === null ? null : !!pollState.last_poll_ok,
+          lastError: pollState.last_error,
+          nextPollAt: poller.nextPollAt,
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
   });
 
   return router;

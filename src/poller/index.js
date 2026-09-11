@@ -27,14 +27,12 @@ class Poller {
 
   /**
    * Runs a tick immediately, outside the regular interval — used after a
-   * manual Jira transition from the UI so its effect (e.g. a PR opening)
-   * shows up right away instead of waiting up to POLL_INTERVAL_MS. Joins
-   * an already-in-flight tick rather than starting a second overlapping
-   * one.
+   * manual Jira transition from the UI, and by POST /api/sync ("Sync now"),
+   * so the dashboard does not wait up to POLL_INTERVAL_MS. Joins an
+   * already-in-flight tick rather than starting a second overlapping one.
    */
   async pollNow() {
-    if (this._currentTick) return this._currentTick;
-    return this._tick();
+    return this._runTick({ reschedule: false });
   }
 
   start() {
@@ -43,16 +41,25 @@ class Poller {
     this._scheduleNext();
   }
 
+  _runTick({ reschedule }) {
+    if (this._currentTick) {
+      if (reschedule) return this._currentTick.finally(() => this._scheduleNext());
+      return this._currentTick;
+    }
+    this._currentTick = this._tick()
+      .catch((err) => this.logger.error({ err: err.message }, 'poll tick failed unexpectedly'))
+      .finally(() => {
+        this._currentTick = null;
+        if (reschedule && !this._stopped) this._scheduleNext();
+      });
+    return this._currentTick;
+  }
+
   _scheduleNext() {
     if (this._stopped) return;
     this.nextPollAt = new Date(Date.now() + this.config.POLL_INTERVAL_MS).toISOString();
     this._timer = setTimeout(() => {
-      this._currentTick = this._tick()
-        .catch((err) => this.logger.error({ err: err.message }, 'poll tick failed unexpectedly'))
-        .finally(() => {
-          this._currentTick = null;
-          this._scheduleNext();
-        });
+      this._runTick({ reschedule: true });
     }, this.config.POLL_INTERVAL_MS);
   }
 

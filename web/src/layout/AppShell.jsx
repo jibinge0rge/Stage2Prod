@@ -22,7 +22,7 @@ function formatEventTime(iso) {
 
 export default function AppShell() {
   const location = useLocation();
-  const { syncNow, toast, selectedTicketKey, closeTicket, registerHealthRefresh } = useAppContext();
+  const { syncNow, syncing, toast, selectedTicketKey, closeTicket, registerHealthRefresh } = useAppContext();
   const { selectedRepoKey } = useRepoFilter();
   const { data: health, refresh: refreshHealth } = useApi('/health', { intervalMs: 15000 });
   const { data: eventsData } = useApi('/events?limit=1', { intervalMs: 15000 });
@@ -166,8 +166,8 @@ export default function AppShell() {
               <div className={styles.pageSub}>{route.subtitle}</div>
             </div>
             <div className="spacer" />
-            <button type="button" className="btn btn-outline" onClick={syncNow}>
-              Sync now
+            <button type="button" className="btn btn-outline" onClick={syncNow} disabled={syncing}>
+              {syncing ? 'Syncing…' : 'Sync now'}
             </button>
           </div>
           <div className={styles.contentBody}>

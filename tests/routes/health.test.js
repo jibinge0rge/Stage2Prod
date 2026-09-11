@@ -68,3 +68,30 @@ describe('GET /api/health', () => {
     expect(res.body.jiraEmail).toBe('jibin.george@work.com');
   });
 });
+
+describe('POST /api/sync', () => {
+  it('401s without a bearer token', async () => {
+    const app = createApp(buildTestCtx());
+    const res = await request(app).post('/api/sync').send({});
+    expect(res.status).toBe(401);
+  });
+
+  it('runs a Jira poll immediately so the UI does not wait for the timer', async () => {
+    const poller = {
+      isRunning: () => true,
+      nextPollAt: '2026-04-20T15:00:00.000Z',
+      pollNow: vi.fn().mockResolvedValue(undefined),
+    };
+    const ctx = buildTestCtx({ poller });
+    const app = createApp(ctx);
+
+    const res = await request(app)
+      .post('/api/sync')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send({});
+
+    expect(res.status).toBe(200);
+    expect(res.body.polled).toBe(true);
+    expect(poller.pollNow).toHaveBeenCalledTimes(1);
+  });
+});
