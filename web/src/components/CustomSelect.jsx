@@ -83,7 +83,7 @@ export default function CustomSelect({ value, options, onChange, disabled, place
             const active = o.value === value;
             return (
               <div
-                key={o.value}
+                key={o.value === '' ? '__empty__' : o.value}
                 role="option"
                 aria-selected={active}
                 onClick={() => {

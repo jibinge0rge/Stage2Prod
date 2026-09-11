@@ -6,14 +6,25 @@ import { useRepoFilter, repoKey, ALL_REPOS } from '../context/RepoFilterContext'
 import { StateBadge } from '../components/Badge';
 import { pipelineStyle } from '../lib/styleMaps';
 
+function countByState(tickets, state) {
+  return tickets?.filter((t) => t.pipelineState === state).length ?? 0;
+}
+
 function RepoStagingSection({ entry }) {
   const { openReset } = useAppContext();
   const { repo, staging, develop } = entry;
-  const rejectedCount = staging?.tickets?.filter((t) => t.pipelineState === 'rejected').length ?? 0;
+  const tickets = staging?.tickets ?? [];
+  const onStagingCount = countByState(tickets, 'staging');
+  const awaitingMergeCount = countByState(tickets, 'staging_queued');
+  const conflictCount = countByState(tickets, 'conflict');
+  const rejectedCount = countByState(tickets, 'rejected');
+  const hasAnything = tickets.length > 0;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div className="eyebrow mono">{repo.owner}/{repo.name}</div>
+      <div className="eyebrow mono">
+        {repo.owner}/{repo.name}
+      </div>
 
       <div className="card" style={{ padding: 16 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
@@ -27,8 +38,14 @@ function RepoStagingSection({ entry }) {
             <div className="stat-value">{staging?.commitsAheadOfDevelop ?? '—'}</div>
           </div>
           <div>
-            <div className="eyebrow">Tickets merged</div>
-            <div className="stat-value">{staging?.tickets?.length ?? '—'}</div>
+            <div className="eyebrow">On staging</div>
+            <div className="stat-value">{onStagingCount}</div>
+          </div>
+          <div>
+            <div className="eyebrow">Awaiting merge</div>
+            <div className="stat-value" style={{ color: awaitingMergeCount ? 'var(--n-body)' : undefined }}>
+              {awaitingMergeCount}
+            </div>
           </div>
           <div>
             <div className="eyebrow">Rejected, still present</div>
@@ -49,15 +66,23 @@ function RepoStagingSection({ entry }) {
         <div className="card-header">
           <div className="card-title">What is on staging right now</div>
         </div>
-        {(staging?.tickets?.length ?? 0) === 0 ? (
-          <div className="empty-state">Staging is clean — nothing merged since the last reset.</div>
+        {!hasAnything ? (
+          <div className="empty-state">Staging is clean — nothing merged or queued since the last reset.</div>
         ) : (
-          staging.tickets.map((t) => (
+          tickets.map((t) => (
             <div
               key={t.key}
-              style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderBottom: '1px solid var(--n-hairline)' }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                padding: '10px 14px',
+                borderBottom: '1px solid var(--n-hairline)',
+              }}
             >
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--n-strongest)', width: 74, flexShrink: 0 }}>{t.key}</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--n-strongest)', width: 74, flexShrink: 0 }}>
+                {t.key}
+              </span>
               <span
                 className="truncate"
                 style={{ fontSize: 12, color: 'var(--n-body)', flex: 1, minWidth: 0 }}
@@ -72,21 +97,29 @@ function RepoStagingSection({ entry }) {
             </div>
           ))
         )}
+        {conflictCount > 0 ? (
+          <div style={{ padding: '8px 14px', fontSize: 11, color: 'var(--warning)' }}>
+            {conflictCount} ticket{conflictCount === 1 ? '' : 's'} in conflict
+          </div>
+        ) : null}
       </div>
 
       <div className="card" style={{ borderColor: 'var(--danger-border)', padding: 16 }}>
         <div className="card-title">Reset staging sandbox</div>
         <p style={{ fontSize: 12, color: 'var(--n-body)', margin: '7px 0 0', maxWidth: 620 }}>
-          Force-updates <span className="mono">refs/heads/{repo.stagingBranch}</span> to the current{' '}
-          <span className="mono">{repo.productionBranch}</span> SHA. Everything merged into staging since the
-          last reset is discarded. Feature branches and open pull requests are untouched.
+          Moves <span className="mono">refs/heads/{repo.stagingBranch}</span> to the current{' '}
+          <span className="mono">{repo.productionBranch}</span> tip. Everything actually merged into staging
+          since the last reset is discarded; open feature PRs are untouched. You will confirm in a dialog
+          before anything runs. If staging is branch-protected, Stage2Prod opens a reset PR instead of
+          force-pushing.
         </p>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 14 }}>
           <button type="button" className="btn btn-lg btn-danger" onClick={() => openReset(repo)}>
             Reset staging to {repo.productionBranch}
           </button>
           <span style={{ fontSize: 11, color: 'var(--n-muted)' }}>
-            {repo.productionBranch} head <span className="mono">{develop?.headSha ? develop.headSha.slice(0, 7) : '—'}</span>
+            {repo.productionBranch} head{' '}
+            <span className="mono">{develop?.headSha ? develop.headSha.slice(0, 7) : '—'}</span>
           </span>
         </div>
       </div>

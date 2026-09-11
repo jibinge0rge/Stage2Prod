@@ -1,10 +1,7 @@
-import { TICKET_FILTERS } from '../lib/ticketFilters';
+import { buildTicketFilters } from '../lib/ticketFilters';
 
-export { TICKET_FILTERS };
-
-export default function FilterChips({ value, onChange, tickets = [] }) {
-  const hasRejected = tickets.some((t) => t.pipelineState === 'rejected');
-  const filters = TICKET_FILTERS.filter((f) => f.id !== 'rejected' || hasRejected || value === 'rejected');
+export default function FilterChips({ value, onChange, tickets = [], statusHandlerMap = null }) {
+  const filters = buildTicketFilters(tickets, { statusHandlerMap, selectedFilter: value });
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>

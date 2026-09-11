@@ -1,10 +1,15 @@
+const {
+  normalizeStatusHandlerMap,
+  effectiveStatusHandlerMap,
+} = require('../../lib/statusHandlerMap');
+
 function createReposRepo(db) {
   const getStmt = db.prepare('SELECT * FROM repos WHERE owner = ? AND name = ?');
   const listActiveStmt = db.prepare('SELECT * FROM repos WHERE active = 1 ORDER BY added_at ASC');
   const listAllStmt = db.prepare('SELECT * FROM repos ORDER BY added_at ASC');
   const insertStmt = db.prepare(`
-    INSERT INTO repos (owner, name, active, added_at, production_branch, staging_branch, jira_project_key)
-    VALUES (@owner, @name, 1, @addedAt, @productionBranch, @stagingBranch, @jiraProjectKey)
+    INSERT INTO repos (owner, name, active, added_at, production_branch, staging_branch, jira_project_key, status_handler_map)
+    VALUES (@owner, @name, 1, @addedAt, @productionBranch, @stagingBranch, @jiraProjectKey, @statusHandlerMap)
     ON CONFLICT(owner, name) DO UPDATE SET active = 1, removed_at = NULL, added_at = @addedAt
   `);
   const removeStmt = db.prepare('UPDATE repos SET active = 0, removed_at = ? WHERE owner = ? AND name = ?');
@@ -12,11 +17,22 @@ function createReposRepo(db) {
     UPDATE repos SET
       production_branch = COALESCE(?, production_branch),
       staging_branch = COALESCE(?, staging_branch),
-      jira_project_key = ?
+      jira_project_key = ?,
+      status_handler_map = ?
     WHERE owner = ? AND name = ?
   `);
 
+  function parseStoredMap(json) {
+    if (!json) return null;
+    try {
+      return normalizeStatusHandlerMap(JSON.parse(json));
+    } catch {
+      return null;
+    }
+  }
+
   function rowToApi(row) {
+    const statusHandlerMap = parseStoredMap(row.status_handler_map);
     return {
       owner: row.owner,
       name: row.name,
@@ -26,6 +42,8 @@ function createReposRepo(db) {
       productionBranch: row.production_branch,
       stagingBranch: row.staging_branch,
       jiraProjectKey: row.jira_project_key,
+      statusHandlerMap,
+      effectiveStatusHandlerMap: effectiveStatusHandlerMap(statusHandlerMap),
     };
   }
 
@@ -43,23 +61,52 @@ function createReposRepo(db) {
       return rows.map(rowToApi);
     },
     // Note: the ON CONFLICT clause above intentionally does not touch
-    // production_branch/staging_branch/jira_project_key, so re-watching a
-    // previously removed repo keeps whatever config it had before, not
-    // these defaults.
-    add(owner, name, { productionBranch = 'develop', stagingBranch = 'staging', jiraProjectKey = null } = {}) {
-      insertStmt.run({ owner, name, addedAt: new Date().toISOString(), productionBranch, stagingBranch, jiraProjectKey: jiraProjectKey || null });
+    // production_branch/staging_branch/jira_project_key/status_handler_map,
+    // so re-watching a previously removed repo keeps whatever config it
+    // had before, not these defaults.
+    add(owner, name, {
+      productionBranch = 'develop',
+      stagingBranch = 'staging',
+      jiraProjectKey = null,
+      statusHandlerMap = undefined,
+    } = {}) {
+      const normalized = statusHandlerMap === undefined ? null : normalizeStatusHandlerMap(statusHandlerMap);
+      insertStmt.run({
+        owner,
+        name,
+        addedAt: new Date().toISOString(),
+        productionBranch,
+        stagingBranch,
+        jiraProjectKey: jiraProjectKey || null,
+        statusHandlerMap: normalized ? JSON.stringify(normalized) : null,
+      });
       return this.get(owner, name);
     },
     // productionBranch/stagingBranch are COALESCE-style (omit to leave
     // unchanged; a branch name can never be intentionally cleared).
-    // jiraProjectKey is different — a repo can legitimately have none, so
-    // `undefined` here means "leave unchanged" while `null`/`''` means
-    // "clear it", resolved in JS before the UPDATE rather than via SQL
-    // COALESCE (which can't distinguish "not given" from "clear to null").
-    update(owner, name, { productionBranch, stagingBranch, jiraProjectKey } = {}) {
+    // jiraProjectKey / statusHandlerMap are different — a repo can
+    // legitimately have none, so `undefined` means "leave unchanged"
+    // while `null`/`''` / `{}` means "clear back to defaults".
+    update(owner, name, { productionBranch, stagingBranch, jiraProjectKey, statusHandlerMap } = {}) {
       const current = this.get(owner, name);
       const nextJiraProjectKey = jiraProjectKey === undefined ? current?.jiraProjectKey ?? null : jiraProjectKey || null;
-      updateStmt.run(productionBranch ?? null, stagingBranch ?? null, nextJiraProjectKey, owner, name);
+      let nextMapJson;
+      if (statusHandlerMap === undefined) {
+        nextMapJson = current?.statusHandlerMap ? JSON.stringify(current.statusHandlerMap) : null;
+      } else if (statusHandlerMap === null || statusHandlerMap === '') {
+        nextMapJson = null;
+      } else {
+        const normalized = normalizeStatusHandlerMap(statusHandlerMap);
+        nextMapJson = normalized ? JSON.stringify(normalized) : null;
+      }
+      updateStmt.run(
+        productionBranch ?? null,
+        stagingBranch ?? null,
+        nextJiraProjectKey,
+        nextMapJson,
+        owner,
+        name
+      );
       return this.get(owner, name);
     },
     remove(owner, name) {

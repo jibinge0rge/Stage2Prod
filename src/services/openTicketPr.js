@@ -88,6 +88,7 @@ async function openTicketPr({
           ticketsRepo,
           eventsRepo,
           ticketMatcher,
+          statusMap: repoConfig.effectiveStatusHandlerMap || repoConfig.statusHandlerMap,
         })
     );
     if (result.outcome !== OUTCOMES.PR_OPENED) {
@@ -116,6 +117,7 @@ async function openTicketPr({
         ticketsRepo,
         eventsRepo,
         ticketMatcher,
+        statusMap: repoConfig.effectiveStatusHandlerMap || repoConfig.statusHandlerMap,
       })
   );
   if (result.outcome !== OUTCOMES.PR_OPENED) {

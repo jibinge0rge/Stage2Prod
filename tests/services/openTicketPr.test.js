@@ -58,7 +58,7 @@ describe('openTicketPr', () => {
     });
     expect(deps.ticketsRepo.get('PROJ-1').pipeline_state).toBe(PIPELINE_STATES.STAGING_QUEUED);
     expect(deps.ticketsRepo.get('PROJ-1').pr_number).toBe(42);
-    expect(deps.jira.tryTransition).not.toHaveBeenCalled();
+    expect(deps.jira.tryTransition).toHaveBeenCalledWith('PROJ-1', 'In QA');
   });
 
   it('opens a PR into production from the feature branch and does not merge it', async () => {
@@ -73,7 +73,7 @@ describe('openTicketPr', () => {
       body: expect.any(String),
     });
     expect(deps.ticketsRepo.get('PROJ-1').pipeline_state).toBe(PIPELINE_STATES.QUEUED);
-    expect(deps.jira.tryTransition).not.toHaveBeenCalled();
+    expect(deps.jira.tryTransition).toHaveBeenCalledWith('PROJ-1', 'Ready for Release');
   });
 
   it('reuses an already-open staging PR instead of creating a duplicate', async () => {
@@ -87,7 +87,7 @@ describe('openTicketPr', () => {
 
     expect(deps.github.createPr).not.toHaveBeenCalled();
     expect(deps.ticketsRepo.get('PROJ-1').pr_number).toBe(7);
-    expect(deps.jira.tryTransition).not.toHaveBeenCalled();
+    expect(deps.jira.tryTransition).toHaveBeenCalledWith('PROJ-1', 'In QA');
   });
 
   it('throws PrNotReadyError when no matching branch exists', async () => {

@@ -124,7 +124,20 @@ class Poller {
   async _processOne(event) {
     const correlationId = newCorrelationId();
     const log = this.logger.child({ correlationId, ticketKey: event.ticketKey });
-    const handler = dispatch(event.newStatus);
+
+    // Prefer the ticket's known repo, then the Jira project key → watched
+    // repo mapping, so each project can use its own status→action map.
+    const ticketRow = this.ticketsRepo.get(event.ticketKey);
+    let mapSource = null;
+    if (ticketRow?.repo_owner) {
+      mapSource = this.reposRepo.get(ticketRow.repo_owner, ticketRow.repo_name);
+    }
+    if (!mapSource) {
+      const byProject = this.repoResolver.matchByProjectKeyOnly(event.ticketKey);
+      if (byProject) mapSource = this.reposRepo.get(byProject.owner, byProject.name);
+    }
+
+    const handler = dispatch(event.newStatus, mapSource?.effectiveStatusHandlerMap || mapSource?.statusHandlerMap);
 
     if (!handler) {
       log.info({ status: event.newStatus }, 'status change has no mapped handler, recording only');
@@ -133,7 +146,6 @@ class Poller {
     }
 
     try {
-      const ticketRow = this.ticketsRepo.get(event.ticketKey);
       const knownRepo = ticketRow?.repo_owner ? { owner: ticketRow.repo_owner, name: ticketRow.repo_name } : null;
       const resolution = await this.repoResolver.resolveTicket(event.ticketKey, knownRepo);
 
@@ -169,6 +181,7 @@ class Poller {
         repoName,
         productionBranch: repoConfig.productionBranch,
         stagingBranch: repoConfig.stagingBranch,
+        statusMap: repoConfig.effectiveStatusHandlerMap || repoConfig.statusHandlerMap,
         github: this.repoResolver.getClient(repoOwner, repoName),
         jira: this.jira,
         ticketsRepo: this.ticketsRepo,

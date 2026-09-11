@@ -1,4 +1,6 @@
 const { OUTCOMES, PIPELINE_STATES, JIRA_COMMENTS, refKey } = require('../lib/constants');
+const { syncJiraStatus } = require('../lib/syncJiraStatus');
+const { jiraStatusForStage } = require('../lib/statusHandlerMap');
 
 /**
  * Lock-free core: ensures a PR from the ticket's feature branch into
@@ -8,8 +10,24 @@ const { OUTCOMES, PIPELINE_STATES, JIRA_COMMENTS, refKey } = require('../lib/con
  * src/services/mergeOpenPr.js). Used both by the poller-driven handler
  * (wrapped in the staging lock below) and by the staging-reset re-merge
  * loop (which already holds the staging lock, so it calls this directly).
+ *
+ * Opens the PR then moves Jira to the mapped "In QA" status.
  */
-async function ensureStagingPrCore({ ticketKey, log, correlationId, trigger, repoOwner, repoName, stagingBranch, github, jira, ticketsRepo, eventsRepo, ticketMatcher }) {
+async function ensureStagingPrCore({
+  ticketKey,
+  log,
+  correlationId,
+  trigger,
+  repoOwner,
+  repoName,
+  stagingBranch,
+  github,
+  jira,
+  ticketsRepo,
+  eventsRepo,
+  ticketMatcher,
+  statusMap,
+}) {
   const branch = await ticketMatcher.findBranchForTicket(ticketKey);
   if (!branch) {
     eventsRepo.insertEvent({
@@ -44,6 +62,13 @@ async function ensureStagingPrCore({ ticketKey, log, correlationId, trigger, rep
   ticketsRepo.setGithubFacts(ticketKey, { prNumber: pr.number, prState: 'open' });
   ticketsRepo.setPipelineState(ticketKey, PIPELINE_STATES.STAGING_QUEUED);
   await jira.addComment(ticketKey, JIRA_COMMENTS.STAGING_PR_OPENED(pr.number, stagingBranch));
+  await syncJiraStatus({
+    jira,
+    ticketsRepo,
+    ticketKey,
+    status: jiraStatusForStage('in_qa', statusMap),
+    log,
+  });
   eventsRepo.insertEvent({
     ticketKey,
     trigger,
@@ -60,13 +85,21 @@ async function ensureStagingPrCore({ ticketKey, log, correlationId, trigger, rep
   return { outcome: OUTCOMES.PR_OPENED };
 }
 
-/**
- * Poller-driven handler: acquires the staging ref lock (namespaced per
- * repo and per the repo's actual staging branch name, so two repos —
- * or two differently-named staging branches — never serialize each
- * other) before ensuring the PR.
- */
-async function toStaging({ event, log, correlationId, repoOwner, repoName, stagingBranch, github, jira, ticketsRepo, eventsRepo, lockManager, ticketMatcher }) {
+async function toStaging({
+  event,
+  log,
+  correlationId,
+  repoOwner,
+  repoName,
+  stagingBranch,
+  github,
+  jira,
+  ticketsRepo,
+  eventsRepo,
+  lockManager,
+  ticketMatcher,
+  statusMap,
+}) {
   const trigger = `Poll · status change`;
   return lockManager.withLock(
     refKey(repoOwner, repoName, `refs/heads/${stagingBranch}`),
@@ -86,6 +119,7 @@ async function toStaging({ event, log, correlationId, repoOwner, repoName, stagi
         ticketsRepo,
         eventsRepo,
         ticketMatcher,
+        statusMap,
       })
   );
 }

@@ -150,6 +150,42 @@ describe('PATCH /api/repos/:owner/:name', () => {
     expect(res.body.repo).toMatchObject({ productionBranch: 'main', stagingBranch: 'qa' });
   });
 
+  it('saves a custom lifecycle status map per repo', async () => {
+    const ctx = buildTestCtx();
+    ctx.reposRepo.add('acme', 'widgets', { jiraProjectKey: 'VIM' });
+    const app = createApp(ctx);
+
+    const res = await request(app)
+      .patch('/api/repos/acme/widgets')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send({
+        statusHandlerMap: {
+          open: { jiraStatus: 'To Do' },
+          in_progress: { jiraStatus: 'Doing' },
+          in_qa: { jiraStatus: 'In QA' },
+          ready_for_release: { jiraStatus: 'Ready for Release' },
+          done: { jiraStatus: 'Done' },
+        },
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.repo.statusHandlerMap.in_progress.jiraStatus).toBe('Doing');
+    expect(res.body.repo.effectiveStatusHandlerMap.in_progress.jiraStatus).toBe('Doing');
+  });
+
+  it('400s on an unknown stage in the status map', async () => {
+    const ctx = buildTestCtx();
+    ctx.reposRepo.add('acme', 'widgets');
+    const app = createApp(ctx);
+
+    const res = await request(app)
+      .patch('/api/repos/acme/widgets')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send({ statusHandlerMap: { explode: { jiraStatus: 'X' } } });
+
+    expect(res.status).toBe(400);
+  });
+
   it('400s when the update would make productionBranch equal stagingBranch', async () => {
     const ctx = buildTestCtx();
     ctx.reposRepo.add('acme', 'widgets', { productionBranch: 'develop', stagingBranch: 'staging' });

@@ -1,14 +1,29 @@
 const { OUTCOMES, PIPELINE_STATES, JIRA_COMMENTS, refKey } = require('../lib/constants');
+const { syncJiraStatus } = require('../lib/syncJiraStatus');
+const { jiraStatusForStage } = require('../lib/statusHandlerMap');
 
 /**
  * Lock-free core: ensures a PR into production exists (reusing one a
  * developer already opened, else creating one from the ticket's matched
  * feature branch), but never merges it — see the note in toStaging.js.
- * Status checks are still fetched and stored for display, but no longer
- * gate anything here (they used to hold the auto-merge; now a human sees
- * them in the ticket drawer before deciding to click Merge themselves).
+ *
+ * Opens the PR then moves Jira to the mapped "Ready for release" status.
  */
-async function ensureDevelopPrCore({ ticketKey, log, correlationId, trigger, repoOwner, repoName, productionBranch, github, jira, ticketsRepo, eventsRepo, ticketMatcher }) {
+async function ensureDevelopPrCore({
+  ticketKey,
+  log,
+  correlationId,
+  trigger,
+  repoOwner,
+  repoName,
+  productionBranch,
+  github,
+  jira,
+  ticketsRepo,
+  eventsRepo,
+  ticketMatcher,
+  statusMap,
+}) {
   let pr = await ticketMatcher.findOpenPrForTicket(ticketKey, { base: productionBranch });
   let created = false;
 
@@ -47,6 +62,13 @@ async function ensureDevelopPrCore({ ticketKey, log, correlationId, trigger, rep
 
   ticketsRepo.setPipelineState(ticketKey, PIPELINE_STATES.QUEUED);
   await jira.addComment(ticketKey, JIRA_COMMENTS.DEVELOP_PR_OPENED(pr.number, productionBranch));
+  await syncJiraStatus({
+    jira,
+    ticketsRepo,
+    ticketKey,
+    status: jiraStatusForStage('ready_for_release', statusMap),
+    log,
+  });
   eventsRepo.insertEvent({
     ticketKey,
     trigger,
@@ -63,7 +85,21 @@ async function ensureDevelopPrCore({ ticketKey, log, correlationId, trigger, rep
   return { outcome: OUTCOMES.PR_OPENED };
 }
 
-async function toDevelop({ event, log, correlationId, repoOwner, repoName, productionBranch, github, jira, ticketsRepo, eventsRepo, lockManager, ticketMatcher }) {
+async function toDevelop({
+  event,
+  log,
+  correlationId,
+  repoOwner,
+  repoName,
+  productionBranch,
+  github,
+  jira,
+  ticketsRepo,
+  eventsRepo,
+  lockManager,
+  ticketMatcher,
+  statusMap,
+}) {
   const trigger = `Poll · status change`;
   return lockManager.withLock(
     refKey(repoOwner, repoName, `refs/heads/${productionBranch}`),
@@ -83,6 +119,7 @@ async function toDevelop({ event, log, correlationId, repoOwner, repoName, produ
         ticketsRepo,
         eventsRepo,
         ticketMatcher,
+        statusMap,
       })
   );
 }

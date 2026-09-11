@@ -1,6 +1,7 @@
-const { OUTCOMES, JIRA_COMMENTS, JIRA_STATUSES } = require('../lib/constants');
+const { OUTCOMES, JIRA_COMMENTS } = require('../lib/constants');
 const { defaultBranchName, assertValidBranchName } = require('../lib/branchName');
 const { syncJiraStatus } = require('../lib/syncJiraStatus');
+const { jiraStatusForStage } = require('../lib/statusHandlerMap');
 
 class BranchNotReadyError extends Error {
   constructor(message) {
@@ -116,11 +117,12 @@ async function createBranchFromProduction({
 
   if (created) {
     await jira.addComment(ticketKey, JIRA_COMMENTS.BRANCH_CREATED(name, productionBranch));
+    const repoConfig = reposRepo.get(repo.owner, repo.name);
     await syncJiraStatus({
       jira,
       ticketsRepo,
       ticketKey,
-      status: JIRA_STATUSES.IN_PROGRESS,
+      status: jiraStatusForStage('in_progress', repoConfig),
       log,
     });
   }

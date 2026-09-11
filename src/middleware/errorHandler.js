@@ -13,7 +13,10 @@ function errorHandler(err, req, res, next) {
   }
   logger.error({ err: err.message, stack: err.stack, path: req.path }, 'unhandled route error');
   const status = err.status && err.status >= 400 && err.status < 600 ? err.status : 500;
-  return res.status(status).json({ error: 'internal_error', message: err.message });
+  return res.status(status).json({
+    error: err.code || (status === 500 ? 'internal_error' : 'request_failed'),
+    message: err.message,
+  });
 }
 
 module.exports = { errorHandler };

@@ -80,11 +80,21 @@ export function AppProvider({ children }) {
       setResetTarget(null);
       const remergedCount = result.remerge?.results?.length || 0;
       const repoLabel = `${resetTarget.owner}/${resetTarget.name}`;
-      showToast(
-        remergeInQa && remergedCount
-          ? `${repoLabel}: staging reset to develop. Re-merged ${remergedCount} ticket${remergedCount === 1 ? '' : 's'} in QA.`
-          : `${repoLabel}: staging reset to develop ${result.newHeadSha ? result.newHeadSha.slice(0, 7) : ''}.`
-      );
+      const productionLabel = resetTarget.productionBranch || 'production';
+      if (result.method === 'pull_request' && result.pullRequest?.number) {
+        const reused = result.pullRequest.reused ? 'Reusing' : 'Opened';
+        showToast(
+          `${repoLabel}: staging is protected — ${reused.toLowerCase()} reset PR #${result.pullRequest.number}. Merge it (or ask an admin to force-push).`
+        );
+      } else if (remergeInQa && remergedCount) {
+        showToast(
+          `${repoLabel}: staging reset to ${productionLabel}. Re-merged ${remergedCount} ticket${remergedCount === 1 ? '' : 's'} in QA.`
+        );
+      } else {
+        showToast(
+          `${repoLabel}: staging reset to ${productionLabel}${result.newHeadSha ? ` ${result.newHeadSha.slice(0, 7)}` : ''}.`
+        );
+      }
       navigate('/staging');
       runPageRefresh();
       return result;

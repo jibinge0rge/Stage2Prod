@@ -54,22 +54,13 @@ function refKey(owner, name, shortRef) {
   return `${owner}/${name}#${shortRef}`;
 }
 
-// Destination Jira statuses we drive from git actions in the drawer.
-// Matched by transition name or by the transition's target status name.
+// Destination Jira statuses we drive from git actions when a repo has
+// no custom status map yet. Prefer jiraStatusForStage() with the repo map.
 const JIRA_STATUSES = Object.freeze({
   IN_PROGRESS: 'In Progress',
   IN_QA: 'In QA',
+  READY_FOR_RELEASE: 'Ready for Release',
   DONE: 'Done',
-});
-
-const STATUS_HANDLER_MAP = Object.freeze({
-  'Ready for QA': 'toStaging',
-  'In QA': 'toStaging',
-  Approved: 'toDevelop',
-  'Ready for Release': 'toDevelop',
-  Done: 'toDevelop',
-  'In Development': 'rejected',
-  'QA Failed': 'rejected',
 });
 
 module.exports = {
@@ -80,5 +71,4 @@ module.exports = {
   SHORT_REF_STAGING,
   SHORT_REF_DEVELOP,
   refKey,
-  STATUS_HANDLER_MAP,
 };

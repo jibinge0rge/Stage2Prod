@@ -67,6 +67,65 @@ describe('Poller._tick eager repo tagging', () => {
     expect(events).toHaveLength(0);
   });
 
+  it('dispatches using a per-repo custom status map', async () => {
+    const db = createTestDb();
+    db.reposRepo.add('acme', 'widgets', {
+      jiraProjectKey: 'SCRUM',
+      stagingBranch: 'staging',
+      statusHandlerMap: {
+        open: { jiraStatus: 'To Do' },
+        in_progress: { jiraStatus: 'Doing' },
+        in_qa: { jiraStatus: 'Doing QA', match: ['Doing QA'] },
+        ready_for_release: { jiraStatus: 'Ready for Release' },
+        done: { jiraStatus: 'Done' },
+      },
+    });
+    // Prior status so the poller sees a transition into the custom-mapped In QA name.
+    db.ticketsRepo.upsert({
+      key: 'SCRUM-1',
+      summary: 'Task',
+      jiraStatus: 'To Do',
+      lastSeenStatus: 'To Do',
+      pipelineState: 'unmerged',
+      repoOwner: 'acme',
+      repoName: 'widgets',
+    });
+    const createPr = vi.fn().mockResolvedValue({ number: 9, htmlUrl: 'https://x/9', headSha: 'abc' });
+    const repoResolver = {
+      invalidateAll: vi.fn(),
+      matchByProjectKeyOnly: vi.fn(() => ({ owner: 'acme', name: 'widgets' })),
+      resolveTicket: vi.fn().mockResolvedValue({ found: true, owner: 'acme', name: 'widgets' }),
+      getClient: () => ({ createPr }),
+      getMatcher: () => ({
+        findBranchForTicket: vi.fn().mockResolvedValue('feat/SCRUM-1'),
+        findOpenPrForTicket: vi.fn().mockResolvedValue(null),
+      }),
+    };
+    const { ticketsRepo, eventsRepo, cursorRepo, lockManager, reposRepo } = db;
+    const jira = {
+      search: vi.fn().mockResolvedValue({ issues: [issue('SCRUM-1', 'Doing QA', '2026-01-01T01:00:00.000Z')] }),
+      addComment: vi.fn().mockResolvedValue({ commented: true }),
+      tryTransition: vi.fn().mockResolvedValue({ transitioned: true }),
+      rateLimit: null,
+    };
+    const poller = new Poller({
+      jira,
+      repoResolver,
+      reposRepo,
+      config,
+      ticketsRepo,
+      eventsRepo,
+      cursorRepo,
+      lockManager,
+      logger: noopLogger,
+    });
+
+    await poller.pollNow();
+
+    expect(createPr).toHaveBeenCalled();
+    expect(ticketsRepo.get('SCRUM-1').pipeline_state).toBe('staging_queued');
+  });
+
   it('joins a second pollNow into the in-flight tick instead of searching twice', async () => {
     const db = createTestDb();
     let release;

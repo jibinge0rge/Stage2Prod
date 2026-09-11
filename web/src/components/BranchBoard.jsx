@@ -57,7 +57,13 @@ export default function BranchBoard({ entry, untrackedStagingCount }) {
         <div className="spacer" />
         <div style={{ fontSize: 11, color: 'var(--n-muted)' }}>no cherry-picks · merge commits only</div>
         {repo && (
-          <button type="button" className="btn btn-outline" onClick={() => openReset(repo)}>
+          <button
+            type="button"
+            className="btn btn-outline"
+            style={{ borderColor: 'var(--danger-border)', color: 'var(--danger)' }}
+            onClick={() => openReset(repo)}
+            title={`Confirm reset of ${repo.stagingBranch} to ${repo.productionBranch}`}
+          >
             Reset staging
           </button>
         )}

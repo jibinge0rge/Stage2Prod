@@ -1,5 +1,6 @@
-const { OUTCOMES, PIPELINE_STATES, JIRA_COMMENTS, JIRA_STATUSES, refKey } = require('../lib/constants');
+const { OUTCOMES, PIPELINE_STATES, JIRA_COMMENTS, refKey } = require('../lib/constants');
 const { syncJiraStatus } = require('../lib/syncJiraStatus');
+const { jiraStatusForStage } = require('../lib/statusHandlerMap');
 
 class MergeNotReadyError extends Error {
   constructor(pipelineState) {
@@ -71,7 +72,7 @@ async function approveIfNotAuthor({ github, pr, prNumber, log }) {
  * the PR's live state first and gives an accurate reason (gone, closed,
  * already merged) instead of defaulting every failure to "conflict."
  */
-async function mergeOpenPr({ ticketKey, repoOwner, repoName, productionBranch, stagingBranch, github, jira, ticketsRepo, eventsRepo, lockManager, log, correlationId, trigger = 'POST /api/tickets/:key/merge' }) {
+async function mergeOpenPr({ ticketKey, repoOwner, repoName, productionBranch, stagingBranch, statusMap, github, jira, ticketsRepo, eventsRepo, lockManager, log, correlationId, trigger = 'POST /api/tickets/:key/merge' }) {
   const row = ticketsRepo.get(ticketKey);
   if (!row) {
     const err = new Error(`No ticket ${ticketKey}`);
@@ -177,9 +178,9 @@ async function mergeOpenPr({ ticketKey, repoOwner, repoName, productionBranch, s
       repoName,
     });
     if (target === 'develop') {
-      await syncJiraStatus({ jira, ticketsRepo, ticketKey, status: JIRA_STATUSES.DONE, log });
+      await syncJiraStatus({ jira, ticketsRepo, ticketKey, status: jiraStatusForStage('done', statusMap), log });
     } else {
-      await syncJiraStatus({ jira, ticketsRepo, ticketKey, status: JIRA_STATUSES.IN_QA, log });
+      await syncJiraStatus({ jira, ticketsRepo, ticketKey, status: jiraStatusForStage('in_qa', statusMap), log });
     }
     return { outcome: OUTCOMES.MERGED, target, alreadyMerged: true };
   }
@@ -204,7 +205,7 @@ async function mergeOpenPr({ ticketKey, repoOwner, repoName, productionBranch, s
         ticketsRepo.setPipelineState(ticketKey, PIPELINE_STATES.DEVELOP);
         ticketsRepo.setGithubFacts(ticketKey, { prState: 'merged', headSha: merged.sha });
         await jira.addComment(ticketKey, JIRA_COMMENTS.DEVELOP_SUCCESS);
-        await syncJiraStatus({ jira, ticketsRepo, ticketKey, status: JIRA_STATUSES.DONE, log });
+        await syncJiraStatus({ jira, ticketsRepo, ticketKey, status: jiraStatusForStage('done', statusMap), log });
         eventsRepo.insertEvent({
           ticketKey,
           trigger,
@@ -222,7 +223,7 @@ async function mergeOpenPr({ ticketKey, repoOwner, repoName, productionBranch, s
         ticketsRepo.setPipelineState(ticketKey, PIPELINE_STATES.STAGING);
         ticketsRepo.setGithubFacts(ticketKey, { prState: 'merged', headSha: merged.sha });
         await jira.addComment(ticketKey, JIRA_COMMENTS.STAGING_SUCCESS);
-        await syncJiraStatus({ jira, ticketsRepo, ticketKey, status: JIRA_STATUSES.IN_QA, log });
+        await syncJiraStatus({ jira, ticketsRepo, ticketKey, status: jiraStatusForStage('in_qa', statusMap), log });
         eventsRepo.insertEvent({
           ticketKey,
           trigger,

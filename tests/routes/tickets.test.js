@@ -498,9 +498,9 @@ describe('POST /api/tickets/:key/pr', () => {
     expect(res.status).toBe(201);
     expect(res.body.pipelineState).toBe('staging_queued');
     expect(res.body.prNumber).toBe(42);
-    expect(res.body.jiraStatus).toBe('In Development');
+    expect(res.body.jiraStatus).toBe('In QA');
     expect(github.createPr).toHaveBeenCalledWith(expect.objectContaining({ base: 'qa', head: 'feat/PROJ-1-login' }));
-    expect(ctx.jira.tryTransition).not.toHaveBeenCalled();
+    expect(ctx.jira.tryTransition).toHaveBeenCalledWith('PROJ-1', 'In QA');
   });
 
   it('400s when the branch has no commits ahead of the target', async () => {

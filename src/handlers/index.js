@@ -1,12 +1,16 @@
 const { toStaging } = require('./toStaging');
 const { toDevelop } = require('./toDevelop');
-const { rejected } = require('./rejected');
-const { STATUS_HANDLER_MAP } = require('../lib/constants');
+const { handlerForStatus } = require('../lib/statusHandlerMap');
 
-const HANDLERS = { toStaging, toDevelop, rejected };
+const HANDLERS = { toStaging, toDevelop };
 
-function dispatch(status) {
-  const name = STATUS_HANDLER_MAP[status];
+/**
+ * Look up the handler for a Jira status name.
+ * `map` is an optional per-repo stage→Jira map (falls back to defaults).
+ * Only In QA / Ready for release stages open PRs; rejected is not used.
+ */
+function dispatch(status, map) {
+  const name = handlerForStatus(status, map);
   return name ? HANDLERS[name] : null;
 }
 

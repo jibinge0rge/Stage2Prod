@@ -1,16 +1,48 @@
-import { useEffect, useState } from 'react';
-import { useApi } from '../lib/api';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useApi, patchJson } from '../lib/api';
 import { useRegisterRefresh } from '../lib/useRegisterRefresh';
+import { useAppContext } from '../context/AppContext';
+import { useRepoFilter, ALL_REPOS, repoKey } from '../context/RepoFilterContext';
+import CustomSelect from '../components/CustomSelect';
 
-const MAPPINGS = [
-  { status: 'Ready for QA', action: 'Merge feature branch into staging', comment: 'Merged into staging successfully. Ready for validation.' },
-  { status: 'In QA', action: 'Merge feature branch into staging', comment: 'Merged into staging successfully. Ready for validation.' },
-  { status: 'Approved', action: 'Merge PR into develop (merge commit)', comment: 'Merged into develop and branch deleted.' },
-  { status: 'Ready for Release', action: 'Merge PR into develop (merge commit)', comment: 'Merged into develop and branch deleted.' },
-  { status: 'Done', action: 'Merge PR into develop, delete remote branch', comment: 'Merged into develop and branch deleted.' },
-  { status: 'QA Failed', action: 'Label PR qa-rejected. No revert, no cherry-pick.', comment: 'Feature rejected. Branch remains unmerged into develop.' },
-  { status: 'In Development', action: 'No git action', comment: 'Feature rejected. Branch remains unmerged into develop.' },
-];
+const STAGE_ORDER = ['open', 'in_progress', 'in_qa', 'ready_for_release', 'done'];
+
+const STAGE_HINTS = {
+  open: 'Starting state (To Do / Open).',
+  in_progress: 'Set when a branch is created.',
+  in_qa: 'Set when a PR is opened to staging.',
+  ready_for_release: 'Set when a PR is opened to production.',
+  done: 'Set when merged to production.',
+};
+
+function mapToRows(map, stages) {
+  const source = map || {};
+  return STAGE_ORDER.map((id) => {
+    const meta = stages.find((s) => s.id === id) || { id, label: id };
+    const entry = source[id] || {};
+    const jiraStatus = typeof entry === 'string' ? entry : entry.jiraStatus || '';
+    const match = typeof entry === 'string'
+      ? ''
+      : Array.isArray(entry.match)
+        ? entry.match.filter((n) => n.toLowerCase() !== jiraStatus.toLowerCase()).join(', ')
+        : '';
+    return { id, label: meta.label, jiraStatus, match };
+  });
+}
+
+function rowsToMap(rows) {
+  const out = {};
+  for (const row of rows) {
+    const jiraStatus = row.jiraStatus.trim();
+    if (!jiraStatus) continue;
+    const match = row.match
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    out[row.id] = { jiraStatus, match };
+  }
+  return out;
+}
 
 function PolicyRow({ title, detail, value, on }) {
   return (
@@ -41,46 +73,206 @@ function useCountdown(targetIso) {
   return `in ${seconds}s`;
 }
 
+function StatusMapEditor({ repo, defaults, stages, onSaved, showToast }) {
+  const [rows, setRows] = useState(() => mapToRows(repo.effectiveStatusHandlerMap || defaults, stages));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const repoId = `${repo.owner}/${repo.name}`;
+  const lastGoodRef = useRef(rows);
+
+  useEffect(() => {
+    const next = mapToRows(repo.effectiveStatusHandlerMap || defaults, stages);
+    setRows(next);
+    lastGoodRef.current = next;
+    setError(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [repoId]);
+
+  function setRow(id, patch) {
+    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  }
+
+  async function save() {
+    setSaving(true);
+    setError(null);
+    try {
+      const statusHandlerMap = rowsToMap(rows);
+      for (const id of STAGE_ORDER) {
+        if (!statusHandlerMap[id]?.jiraStatus) {
+          setError(`Set a Jira status for every stage (missing ${id.replace(/_/g, ' ')}).`);
+          return;
+        }
+      }
+      lastGoodRef.current = rows;
+      const result = await patchJson(`/repos/${repo.owner}/${repo.name}`, { statusHandlerMap });
+      const next = mapToRows(result?.repo?.effectiveStatusHandlerMap || statusHandlerMap, stages);
+      setRows(next);
+      lastGoodRef.current = next;
+      onSaved?.(result);
+      showToast?.(`Saved status map for ${repo.owner}/${repo.name}`);
+    } catch (err) {
+      setError(err.message);
+      setRows(lastGoodRef.current);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function resetDefaults() {
+    setSaving(true);
+    setError(null);
+    try {
+      const result = await patchJson(`/repos/${repo.owner}/${repo.name}`, { statusHandlerMap: null });
+      const next = mapToRows(result?.repo?.effectiveStatusHandlerMap || defaults, stages);
+      setRows(next);
+      lastGoodRef.current = next;
+      onSaved?.(result);
+      showToast?.(`Reset ${repo.owner}/${repo.name} to default status map`);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '140px minmax(140px, 1fr) minmax(160px, 1.2fr)',
+          gap: 10,
+          padding: '8px 14px',
+          background: 'var(--n-fill-subtle)',
+          borderBottom: '1px solid var(--n-border)',
+          fontSize: 10,
+          fontWeight: 600,
+          letterSpacing: '0.06em',
+          textTransform: 'uppercase',
+          color: 'var(--n-muted)',
+        }}
+      >
+        <div>Stage</div>
+        <div>Jira status</div>
+        <div>Also match</div>
+      </div>
+      {rows.map((row) => (
+        <div
+          key={row.id}
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '140px minmax(140px, 1fr) minmax(160px, 1.2fr)',
+            gap: 10,
+            padding: '10px 14px',
+            borderBottom: '1px solid var(--n-hairline)',
+            alignItems: 'start',
+          }}
+        >
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--n-strongest)' }}>{row.label}</div>
+            <div style={{ fontSize: 10, color: 'var(--n-muted)', marginTop: 2 }}>{STAGE_HINTS[row.id]}</div>
+          </div>
+          <input
+            value={row.jiraStatus}
+            onChange={(e) => setRow(row.id, { jiraStatus: e.target.value })}
+            placeholder="Exact Jira status name"
+            style={{
+              height: 28,
+              padding: '0 8px',
+              border: '1px solid var(--n-border)',
+              borderRadius: 'var(--r-input)',
+              fontSize: 12,
+              background: 'var(--n-surface)',
+              color: 'var(--n-body)',
+            }}
+          />
+          <input
+            value={row.match}
+            onChange={(e) => setRow(row.id, { match: e.target.value })}
+            placeholder="Optional aliases, comma-separated"
+            title="Other Jira status names that count as this stage"
+            style={{
+              height: 28,
+              padding: '0 8px',
+              border: '1px solid var(--n-border)',
+              borderRadius: 'var(--r-input)',
+              fontSize: 12,
+              background: 'var(--n-surface)',
+              color: 'var(--n-body)',
+            }}
+          />
+        </div>
+      ))}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', flexWrap: 'wrap' }}>
+        <button type="button" className="btn btn-plain" onClick={resetDefaults} disabled={saving}>
+          Reset to defaults
+        </button>
+        <div className="spacer" />
+        {error && <span style={{ fontSize: 11, color: 'var(--danger)' }}>{error}</span>}
+        <button type="button" className="btn btn-primary" onClick={save} disabled={saving}>
+          {saving ? 'Saving…' : 'Save mapping'}
+        </button>
+      </div>
+      <div style={{ padding: '0 14px 12px', fontSize: 11, color: 'var(--n-muted)' }}>
+        Only these five stages appear in Ticket pipeline. Rejected / QA Failed are not used.
+        Status names must match Jira exactly (case-sensitive) for transitions.
+      </div>
+    </div>
+  );
+}
+
 export default function RulesPolling() {
+  const { showToast } = useAppContext();
+  const { selectedRepoKey, setSelectedRepoKey } = useRepoFilter();
   const { data: health, refresh } = useApi('/health', { intervalMs: 15000 });
-  useRegisterRefresh(refresh);
+  const { data: reposData, refresh: refreshRepos } = useApi('/repos', { intervalMs: 20000 });
+  const { data: mapMeta } = useApi('/status-map', { intervalMs: 60000 });
+  useRegisterRefresh(() => {
+    refresh();
+    refreshRepos();
+  });
   const nextPollLabel = useCountdown(health?.poller?.nextPollAt);
+
+  const repos = reposData?.repos ?? [];
+  const defaults = mapMeta?.defaults ?? {};
+  const stages = mapMeta?.stages ?? STAGE_ORDER.map((id) => ({ id, label: id.replace(/_/g, ' ') }));
+
+  const focusedRepo = useMemo(() => {
+    if (!repos.length) return null;
+    if (selectedRepoKey !== ALL_REPOS) {
+      return repos.find((r) => repoKey(r) === selectedRepoKey) || repos[0];
+    }
+    return repos[0];
+  }, [repos, selectedRepoKey]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 920 }}>
       <div className="card">
         <div className="card-header">
-          <div className="card-title">Jira status to git action</div>
+          <div className="card-title">Lifecycle status mapping</div>
+          <div className="spacer" />
+          {repos.length > 0 && (
+            <CustomSelect
+              style={{ width: 220 }}
+              value={focusedRepo ? repoKey(focusedRepo) : null}
+              options={repos.map((r) => repoKey(r))}
+              onChange={(key) => setSelectedRepoKey(key)}
+              title="Watched repository"
+            />
+          )}
         </div>
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: '170px 1fr 190px',
-            gap: 10,
-            padding: '8px 14px',
-            background: 'var(--n-fill-subtle)',
-            borderBottom: '1px solid var(--n-border)',
-            fontSize: 10,
-            fontWeight: 600,
-            letterSpacing: '0.06em',
-            textTransform: 'uppercase',
-            color: 'var(--n-muted)',
-          }}
-        >
-          <div>Jira status</div>
-          <div>Action taken</div>
-          <div>Jira comment posted</div>
-        </div>
-        {MAPPINGS.map((m) => (
-          <div
-            key={m.status}
-            style={{ display: 'grid', gridTemplateColumns: '170px 1fr 190px', gap: 10, padding: '10px 14px', borderBottom: '1px solid var(--n-hairline)', alignItems: 'start' }}
-          >
-            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--n-strongest)' }}>{m.status}</div>
-            <div style={{ fontSize: 12, color: 'var(--n-body)' }}>{m.action}</div>
-            <div style={{ fontSize: 11, color: 'var(--n-muted)' }}>{m.comment}</div>
-          </div>
-        ))}
+        {!focusedRepo ? (
+          <div className="empty-state">Watch a repository first — each repo can use its own Jira status names.</div>
+        ) : (
+          <StatusMapEditor
+            key={repoKey(focusedRepo)}
+            repo={focusedRepo}
+            defaults={defaults}
+            stages={stages}
+            showToast={showToast}
+            onSaved={() => refreshRepos()}
+          />
+        )}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(300px,1fr))', gap: 12, alignItems: 'stretch' }}>
@@ -110,27 +302,8 @@ export default function RulesPolling() {
                 </div>
               </div>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 7, paddingTop: 11, borderTop: '1px solid var(--n-hairline)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 11, color: 'var(--n-muted)', flex: 1 }}>Last successful poll</span>
-                <span className="mono" style={{ fontSize: 11, color: 'var(--n-body)' }}>
-                  {health?.poller?.lastPollAt ? new Date(health.poller.lastPollAt).toISOString().slice(11, 19) + ' UTC' : '—'}
-                </span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 11, color: 'var(--n-muted)', flex: 1 }}>Cursor (last seen transition)</span>
-                <span className="mono" style={{ fontSize: 11, color: 'var(--n-body)' }}>{health?.poller?.cursor || '—'}</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 11, color: 'var(--n-muted)', flex: 1 }}>Jira rate limit remaining</span>
-                <span style={{ fontSize: 11, color: 'var(--n-body)', fontVariantNumeric: 'tabular-nums' }}>
-                  {health?.jira?.rateLimitRemaining ?? '—'}
-                </span>
-              </div>
-            </div>
             <div style={{ fontSize: 11, color: 'var(--n-muted)' }}>
-              Cursor is persisted to disk, so a restart replays only transitions newer than the last one handled.
-              No inbound port and no public URL required.
+              Moving a ticket into your mapped In QA status opens a staging PR; Ready for release opens a production PR.
             </div>
           </div>
         </div>
@@ -147,7 +320,6 @@ export default function RulesPolling() {
             </div>
             <PolicyRow title="Require passing status checks" detail="blocks develop merges only" value="on" on />
             <PolicyRow title="Delete branch after develop merge" detail="remote only" value="on" on />
-            <PolicyRow title="Label rejected PRs" detail="applies qa-rejected" value="on" on />
           </div>
         </div>
       </div>

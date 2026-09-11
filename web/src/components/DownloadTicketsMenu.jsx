@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { TICKET_FILTERS, filterTickets } from '../lib/ticketFilters';
+import { PIPELINE_FILTERS, filterTickets } from '../lib/ticketFilters';
 import { downloadTicketsCsv } from '../lib/ticketsCsv';
 
-export default function DownloadTicketsMenu({ tickets, currentRows, currentFilter }) {
+export default function DownloadTicketsMenu({ tickets, currentRows, currentFilter, filterOptions, statusHandlerMap }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
 
@@ -22,16 +22,16 @@ export default function DownloadTicketsMenu({ tickets, currentRows, currentFilte
     };
   }, [open]);
 
-  const hasRejected = tickets.some((t) => t.pipelineState === 'rejected');
-  const slices = TICKET_FILTERS.filter((f) => f.id !== 'rejected' || hasRejected).map((f) => ({
+  const slices = (filterOptions || PIPELINE_FILTERS).map((f) => ({
     id: f.id,
     label: f.label,
-    rows: filterTickets(tickets, f.id),
+    rows: filterTickets(tickets, f.id, statusHandlerMap),
   }));
 
   function download(rows, slug) {
     if (!rows.length) return;
-    downloadTicketsCsv(rows, slug);
+    const safe = String(slug).replace(/[^a-zA-Z0-9._-]+/g, '_');
+    downloadTicketsCsv(rows, safe);
     setOpen(false);
   }
 
@@ -54,6 +54,8 @@ export default function DownloadTicketsMenu({ tickets, currentRows, currentFilte
             top: 'calc(100% + 4px)',
             right: 0,
             minWidth: 240,
+            maxHeight: 360,
+            overflowY: 'auto',
             background: 'var(--n-surface)',
             border: '1px solid var(--n-border)',
             borderRadius: 'var(--r-input)',

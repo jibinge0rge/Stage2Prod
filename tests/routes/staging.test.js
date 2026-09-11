@@ -2,6 +2,7 @@ const request = require('supertest');
 const { createApp } = require('../../src/app');
 const { createTestDb, noopLogger } = require('../setup');
 const { config } = require('../../src/config');
+const { HttpError } = require('../../src/clients/github');
 
 const REPO = { owner: 'acme', name: 'widgets' };
 
@@ -15,6 +16,7 @@ function buildTestCtx() {
     updateRef: vi.fn().mockResolvedValue({ sha: 'develop-sha' }),
     createMerge: vi.fn().mockResolvedValue({ conflict: false, sha: 'remerge-sha' }),
     createPr: vi.fn().mockResolvedValue({ number: 99, htmlUrl: 'https://x/99', headSha: 'sha1' }),
+    listOpenPulls: vi.fn().mockResolvedValue([]),
   };
   const jira = { addComment: vi.fn().mockResolvedValue({ commented: true }), tryTransition: vi.fn() };
   const ticketMatcher = {
@@ -95,12 +97,98 @@ describe('POST /api/staging/reset', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
+    expect(res.body.method).toBe('force');
     expect(res.body.newHeadSha).toBe('develop-sha');
     expect(ctx.github.updateRef).toHaveBeenCalledWith('staging', 'develop-sha', { force: true });
 
     const { events } = ctx.eventsRepo.list({ outcome: 'RESET' });
     expect(events).toHaveLength(1);
     expect(events[0].repo).toEqual(REPO);
+  });
+
+  it('opens a reset PR when staging is branch-protected and leaves ticket state alone', async () => {
+    const ctx = buildTestCtx();
+    ctx.ticketsRepo.upsert({
+      key: 'PROJ-1',
+      jiraStatus: 'In QA',
+      pipelineState: 'staging',
+      repoOwner: REPO.owner,
+      repoName: REPO.name,
+    });
+    ctx.github.updateRef.mockRejectedValue(new HttpError(403, 'Cannot force-push to this protected branch'));
+    ctx.github.createPr.mockResolvedValue({
+      number: 42,
+      htmlUrl: 'https://github.com/acme/widgets/pull/42',
+      headSha: 'develop-sha',
+    });
+    const app = createApp(ctx);
+
+    const res = await request(app)
+      .post('/api/staging/reset')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send({ ...REPO, remergeInQa: true });
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.method).toBe('pull_request');
+    expect(res.body.newHeadSha).toBeNull();
+    expect(res.body.pullRequest).toEqual({
+      number: 42,
+      htmlUrl: 'https://github.com/acme/widgets/pull/42',
+      reused: false,
+    });
+    expect(res.body.remerge.skipped).toBe(true);
+    expect(ctx.github.createPr).toHaveBeenCalledWith(
+      expect.objectContaining({ base: 'staging', head: 'develop' })
+    );
+    expect(ctx.ticketsRepo.get('PROJ-1').pipeline_state).toBe('staging');
+
+    const { events } = ctx.eventsRepo.list({ outcome: 'PR_OPENED' });
+    expect(events.some((e) => e.action === 'reset-pr')).toBe(true);
+  });
+
+  it('reuses an existing production→staging PR when force-update is blocked', async () => {
+    const ctx = buildTestCtx();
+    ctx.github.updateRef.mockRejectedValue(new HttpError(403, 'protected branch hook declined'));
+    ctx.github.listOpenPulls.mockResolvedValue([
+      {
+        number: 7,
+        html_url: 'https://github.com/acme/widgets/pull/7',
+        base: { ref: 'staging' },
+        head: { ref: 'develop', sha: 'develop-sha' },
+      },
+    ]);
+    const app = createApp(ctx);
+
+    const res = await request(app)
+      .post('/api/staging/reset')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send(REPO);
+
+    expect(res.status).toBe(200);
+    expect(res.body.method).toBe('pull_request');
+    expect(res.body.pullRequest).toEqual({
+      number: 7,
+      htmlUrl: 'https://github.com/acme/widgets/pull/7',
+      reused: true,
+    });
+    expect(ctx.github.createPr).not.toHaveBeenCalled();
+  });
+
+  it('skips updateRef when staging already matches production', async () => {
+    const ctx = buildTestCtx();
+    ctx.github.getRef.mockResolvedValue('same-sha');
+    const app = createApp(ctx);
+
+    const res = await request(app)
+      .post('/api/staging/reset')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send({ ...REPO, remergeInQa: false });
+
+    expect(res.status).toBe(200);
+    expect(res.body.method).toBe('already_aligned');
+    expect(res.body.newHeadSha).toBe('same-sha');
+    expect(ctx.github.updateRef).not.toHaveBeenCalled();
   });
 
   it('returns 409 when the staging lock for that repo is already held', async () => {
