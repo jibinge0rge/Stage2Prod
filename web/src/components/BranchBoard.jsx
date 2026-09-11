@@ -24,9 +24,14 @@ function BranchColumn({ label, dotColor, subtitle, tickets, untrackedNote }) {
                 key={t.key}
                 className={`pill-row ${s.dashed ? 'dashed' : 'solid'}`}
                 style={{ borderColor: s.border, background: s.dashed ? 'transparent' : s.bg, color: s.fg }}
+                data-tip={t.summary || undefined}
+                aria-label={t.summary ? `${t.key} ${t.summary}` : t.key}
               >
-                {t.key}
-                <span style={{ fontWeight: 400, color: s.dashed ? 'var(--n-muted)' : undefined }}>
+                <span className="pill-row-label">
+                  <span className="pill-row-key">{t.key}</span>
+                  {t.summary ? <span className="pill-row-summary truncate">{t.summary}</span> : null}
+                </span>
+                <span className="pill-row-status" style={{ color: s.dashed ? 'var(--n-muted)' : undefined }}>
                   {t.statusLabel}
                 </span>
               </span>

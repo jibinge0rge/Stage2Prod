@@ -17,6 +17,15 @@ function statusLabelFor(row, side) {
   return `merged ${formatTime(row.updated_at)}`;
 }
 
+function toBranchTicket(row, side) {
+  return {
+    key: row.ticket_key,
+    summary: row.summary || null,
+    statusLabel: statusLabelFor(row, side),
+    pipelineState: row.pipeline_state,
+  };
+}
+
 async function branchesForRepo({ repo, ticketsRepo, github }) {
   const { owner, name, productionBranch, stagingBranch } = repo;
   const [stagingSha, productionSha] = await Promise.all([
@@ -47,12 +56,12 @@ async function branchesForRepo({ repo, ticketsRepo, github }) {
     staging: {
       headSha: stagingSha,
       commitsAheadOfDevelop: commitsAheadOfProduction,
-      tickets: stagingRows.map((r) => ({ key: r.ticket_key, statusLabel: statusLabelFor(r, 'staging'), pipelineState: r.pipeline_state })),
+      tickets: stagingRows.map((r) => toBranchTicket(r, 'staging')),
     },
     develop: {
       headSha: productionSha,
       commitsAheadOfStaging,
-      tickets: developRows.map((r) => ({ key: r.ticket_key, statusLabel: statusLabelFor(r, 'develop'), pipelineState: r.pipeline_state })),
+      tickets: developRows.map((r) => toBranchTicket(r, 'develop')),
     },
   };
 }

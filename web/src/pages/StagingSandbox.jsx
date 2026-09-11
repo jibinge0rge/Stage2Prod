@@ -58,7 +58,14 @@ function RepoStagingSection({ entry }) {
               style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderBottom: '1px solid var(--n-hairline)' }}
             >
               <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--n-strongest)', width: 74, flexShrink: 0 }}>{t.key}</span>
-              <span className="mono truncate" style={{ fontSize: 11, color: 'var(--n-muted)', flex: 1, minWidth: 0 }}>
+              <span
+                className="truncate"
+                style={{ fontSize: 12, color: 'var(--n-body)', flex: 1, minWidth: 0 }}
+                title={t.summary || undefined}
+              >
+                {t.summary || '—'}
+              </span>
+              <span className="mono" style={{ fontSize: 11, color: 'var(--n-muted)', flexShrink: 0 }}>
                 {t.statusLabel}
               </span>
               <StateBadge state={t.pipelineState} styleMap={pipelineStyle} />

@@ -37,7 +37,7 @@ export default function TicketTable({ tickets, selectedKey, onSelect, rowHeight 
             onClick={() => onSelect(t.key)}
           >
             <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--n-strongest)' }}>{t.key}</div>
-            <div className="truncate" style={{ fontSize: 12, color: 'var(--n-body)' }}>
+            <div className="truncate" style={{ fontSize: 12, color: 'var(--n-body)' }} title={t.summary || undefined}>
               {t.summary}
             </div>
             <div className="mono truncate" style={{ fontSize: 11, color: 'var(--n-muted)' }}>

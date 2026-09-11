@@ -209,9 +209,13 @@
 }
 
 .pill-row {
-  display: inline-flex;
+  position: relative;
+  display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
   height: 26px;
   padding: 0 10px;
   border-radius: var(--r-card);
@@ -224,4 +228,58 @@
 }
 .pill-row.solid {
   border: 1px solid;
+}
+.pill-row-label {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+.pill-row-key {
+  flex-shrink: 0;
+}
+.pill-row-summary {
+  font-weight: 400;
+  opacity: 0.72;
+  min-width: 0;
+}
+.pill-row-status {
+  flex-shrink: 0;
+  font-weight: 400;
+}
+.pill-row[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  z-index: 4;
+  max-width: min(280px, 70vw);
+  width: max-content;
+  padding: 6px 8px;
+  border-radius: var(--r-card);
+  background: var(--n-strongest);
+  color: var(--n-surface);
+  box-shadow: var(--shadow-popover);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 15px;
+  white-space: normal;
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(0.97);
+  transform-origin: bottom left;
+  transition: opacity 125ms var(--ease), transform 125ms var(--ease);
+}
+@media (hover: hover) and (pointer: fine) {
+  .pill-row[data-tip]:hover::after {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pill-row[data-tip]::after {
+    transform: none;
+    transition: opacity 125ms var(--ease);
+  }
 }
