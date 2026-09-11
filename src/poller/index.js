@@ -1,4 +1,4 @@
-const { diffIssues, extractSprintName } = require('./diff');
+const { diffIssues, sprintNameFromIssue } = require('./diff');
 const { buildPollJql } = require('./jql');
 const { dispatch } = require('../handlers');
 const { newCorrelationId } = require('../lib/correlationId');
@@ -73,7 +73,7 @@ class Poller {
           lastSeenStatus: this.ticketsRepo.getLastSeenStatus(issue.key) ?? issue.fields.status.name,
           assigneeName: issue.fields.assignee ? issue.fields.assignee.displayName : null,
           assigneeAvatarUrl: issue.fields.assignee ? issue.fields.assignee.avatarUrls?.['48x48'] : null,
-          sprintName: extractSprintName(issue.fields.sprint),
+          sprintName: sprintNameFromIssue(issue),
           jiraUpdatedAt: issue.fields.updated,
         });
 

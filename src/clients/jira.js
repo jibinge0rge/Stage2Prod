@@ -83,14 +83,36 @@ class JiraClient {
    * Loops pages here so callers still get every matching issue back in
    * one `{ issues }` result, same as before.
    */
+  /**
+   * Jira Software stores Sprint as a custom field (`gh-sprint`), not a
+   * built-in named `sprint`. Discover that field id once per process so
+   * search actually returns it.
+   */
+  async getSprintFieldIds() {
+    if (this._sprintFieldIds) return this._sprintFieldIds;
+    try {
+      const fields = await this._withJiraBackoff(() => this._request('GET', '/rest/api/3/field'));
+      this._sprintFieldIds = (fields || [])
+        .filter((f) => f.schema?.custom === 'com.pyxis.greenhopper.jira:gh-sprint' || /^sprint$/i.test(f.name || ''))
+        .map((f) => f.id)
+        .filter(Boolean);
+    } catch (err) {
+      logger.warn({ err: err.message }, 'could not list Jira fields to find Sprint');
+      this._sprintFieldIds = [];
+    }
+    if (this._sprintFieldIds.length === 0) this._sprintFieldIds = ['sprint'];
+    return this._sprintFieldIds;
+  }
+
   async search(jql) {
+    const sprintFields = await this.getSprintFieldIds();
     const issues = [];
     let nextPageToken;
     // eslint-disable-next-line no-constant-condition
     while (true) {
       const body = {
         jql,
-        fields: ['summary', 'status', 'assignee', 'updated', 'sprint'],
+        fields: ['summary', 'status', 'assignee', 'updated', 'closedSprints', ...sprintFields],
         maxResults: 100,
         ...(nextPageToken ? { nextPageToken } : {}),
       };

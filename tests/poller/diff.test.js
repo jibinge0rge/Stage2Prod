@@ -1,4 +1,4 @@
-const { diffIssue, diffIssues, extractSprintName } = require('../../src/poller/diff');
+const { diffIssue, diffIssues, extractSprintName, sprintNameFromIssue } = require('../../src/poller/diff');
 const { makeIssue } = require('../fixtures/jiraIssues');
 
 describe('diffIssue', () => {
@@ -57,5 +57,25 @@ describe('extractSprintName', () => {
   it('falls back to the last sprint when none are active', () => {
     const sprints = [{ name: 'Sprint 33', state: 'closed' }, { name: 'Sprint 34', state: 'closed' }];
     expect(extractSprintName(sprints)).toBe('Sprint 34');
+  });
+
+  it('parses GreenHopper serialized sprint strings', () => {
+    expect(
+      extractSprintName(
+        'com.atlassian.greenhopper.service.sprint.Sprint@abc[id=1,name=SCRUM Sprint 0,state=ACTIVE,boardId=2]'
+      )
+    ).toBe('SCRUM Sprint 0');
+  });
+});
+
+describe('sprintNameFromIssue', () => {
+  it('reads Jira Cloud customfield_10020 when fields.sprint is empty', () => {
+    const issue = {
+      fields: {
+        sprint: null,
+        customfield_10020: [{ id: 1, name: 'SCRUM Sprint 0', state: 'active', boardId: 1 }],
+      },
+    };
+    expect(sprintNameFromIssue(issue)).toBe('SCRUM Sprint 0');
   });
 });

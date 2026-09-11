@@ -21,7 +21,16 @@ describe('JiraClient', () => {
     it('constructs the Basic auth header and posts to /rest/api/3/search/jql (the replacement for the removed GET /search)', async () => {
       const expected = `Basic ${Buffer.from('bot@example.com:tok').toString('base64')}`;
       nock(BASE, { reqheaders: { authorization: expected } })
-        .post('/rest/api/3/search/jql', { jql: 'project = PROJ', fields: ['summary', 'status', 'assignee', 'updated', 'sprint'], maxResults: 100 })
+        .get('/rest/api/3/field')
+        .reply(200, [
+          { id: 'customfield_10020', name: 'Sprint', schema: { custom: 'com.pyxis.greenhopper.jira:gh-sprint' } },
+        ]);
+      nock(BASE, { reqheaders: { authorization: expected } })
+        .post('/rest/api/3/search/jql', {
+          jql: 'project = PROJ',
+          fields: ['summary', 'status', 'assignee', 'updated', 'closedSprints', 'customfield_10020'],
+          maxResults: 100,
+        })
         .reply(200, { issues: [], isLast: true });
 
       const result = await client.search('project = PROJ');
@@ -29,6 +38,7 @@ describe('JiraClient', () => {
     });
 
     it('returns issues from a single page when isLast is true', async () => {
+      nock(BASE).get('/rest/api/3/field').reply(200, []);
       nock(BASE)
         .post('/rest/api/3/search/jql')
         .reply(200, { issues: [{ key: 'PROJ-1' }, { key: 'PROJ-2' }], isLast: true });
@@ -38,6 +48,7 @@ describe('JiraClient', () => {
     });
 
     it('follows nextPageToken across multiple pages and concatenates issues', async () => {
+      nock(BASE).get('/rest/api/3/field').reply(200, []);
       nock(BASE)
         .post('/rest/api/3/search/jql', (body) => !body.nextPageToken)
         .reply(200, { issues: [{ key: 'PROJ-1' }], isLast: false, nextPageToken: 'page-2' });
@@ -51,6 +62,7 @@ describe('JiraClient', () => {
     });
 
     it('stops when a response omits nextPageToken even without an explicit isLast:true', async () => {
+      nock(BASE).get('/rest/api/3/field').reply(200, []);
       nock(BASE).post('/rest/api/3/search/jql').reply(200, { issues: [{ key: 'PROJ-1' }] });
 
       const result = await client.search('project = PROJ');
