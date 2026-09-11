@@ -141,6 +141,7 @@ class GitHubClient {
       merged: data.merged,
       base: data.base.ref,
       head: data.head.ref,
+      headSha: data.head.sha ?? null,
       author: data.user?.login ?? null,
       htmlUrl: data.html_url,
     };

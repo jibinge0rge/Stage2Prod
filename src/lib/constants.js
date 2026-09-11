@@ -36,6 +36,8 @@ const JIRA_COMMENTS = Object.freeze({
     `Pull request #${prNumber} into \`${stagingBranch}\` was closed without merging. The branch is still there if you want to open a new PR.`,
   DEVELOP_PR_CLOSED: (prNumber, productionBranch) =>
     `Pull request #${prNumber} into \`${productionBranch}\` was closed without merging. The branch is still there if you want to open a new PR.`,
+  LINKED_PR: (prNumber, head, base) =>
+    `Linked pull request #${prNumber} (\`${head}\` → \`${base}\`) from Stage2Prod.`,
 });
 
 // Short ref names, as displayed/stored in lock_events.ref_name. A lock key

@@ -518,3 +518,85 @@ describe('POST /api/tickets/:key/pr', () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe('POST /api/tickets/:key/pr/link', () => {
+  it('401s without a bearer token', async () => {
+    const app = createApp(buildTestCtx());
+    const res = await request(app).post('/api/tickets/PROJ-1/pr/link').send({ prNumber: 18 });
+    expect(res.status).toBe(401);
+  });
+
+  it('links an existing open PR onto the ticket', async () => {
+    const ctx = buildTestCtx();
+    ctx.reposRepo.add('acme', 'widgets', { productionBranch: 'main', stagingBranch: 'qa' });
+    ctx.ticketsRepo.upsert({
+      key: 'PROJ-1',
+      jiraStatus: 'In Progress',
+      pipelineState: 'unmerged',
+      repoOwner: 'acme',
+      repoName: 'widgets',
+    });
+    ctx.repoResolver.getClient = vi.fn(() => ({
+      getPr: vi.fn().mockResolvedValue({
+        number: 18,
+        state: 'open',
+        merged: false,
+        base: 'qa',
+        head: 'hotfix-login',
+        headSha: 'abc',
+      }),
+      getCombinedStatus: vi.fn().mockResolvedValue({ overall: null }),
+    }));
+    const app = createApp(ctx);
+
+    const res = await request(app)
+      .post('/api/tickets/PROJ-1/pr/link')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send({ prNumber: 18 });
+
+    expect(res.status).toBe(200);
+    expect(res.body.prNumber).toBe(18);
+    expect(res.body.pipelineState).toBe('staging_queued');
+    expect(res.body.branch).toBe('hotfix-login');
+  });
+});
+
+describe('GET /api/tickets/:key/pulls', () => {
+  it('lists open staging/production PRs that can be linked', async () => {
+    const ctx = buildTestCtx();
+    ctx.reposRepo.add('acme', 'widgets', { productionBranch: 'main', stagingBranch: 'qa' });
+    ctx.ticketsRepo.upsert({
+      key: 'PROJ-1',
+      jiraStatus: 'In Progress',
+      pipelineState: 'unmerged',
+      repoOwner: 'acme',
+      repoName: 'widgets',
+    });
+    ctx.repoResolver.getClient = vi.fn(() => ({
+      listOpenPulls: vi.fn().mockResolvedValue([
+        {
+          number: 18,
+          title: 'fix login',
+          head: { ref: 'hotfix-login' },
+          base: { ref: 'qa' },
+          html_url: 'https://x/18',
+        },
+      ]),
+    }));
+    const app = createApp(ctx);
+
+    const res = await request(app).get('/api/tickets/PROJ-1/pulls');
+    expect(res.status).toBe(200);
+    expect(res.body.pulls).toEqual([
+      {
+        number: 18,
+        title: 'fix login',
+        headRef: 'hotfix-login',
+        baseRef: 'qa',
+        url: 'https://x/18',
+        repo: { owner: 'acme', name: 'widgets' },
+        target: 'staging',
+      },
+    ]);
+  });
+});

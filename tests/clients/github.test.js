@@ -135,6 +135,7 @@ describe('GitHubClient', () => {
       merged: false,
       base: 'staging',
       head: 'feat/x',
+      headSha: null,
       htmlUrl: 'https://x/5',
       author: 'octocat',
     });

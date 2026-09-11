@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import styles from '../layout/AppShell.module.css';
 import { useApi, postJson } from '../lib/api';
 import { StateBadge } from './Badge';
@@ -36,10 +36,111 @@ function PathStep({ n, title, hint, done, children }) {
   );
 }
 
+function pullOptionValue(p) {
+  return `${p.repo.owner}/${p.repo.name}#${p.number}`;
+}
+
+function parsePullOption(value) {
+  const hash = value.lastIndexOf('#');
+  const repo = value.slice(0, hash);
+  const slash = repo.indexOf('/');
+  return {
+    owner: repo.slice(0, slash),
+    name: repo.slice(slash + 1),
+    prNumber: Number(value.slice(hash + 1)),
+  };
+}
+
+function LinkPrForm({ ticketKey, ticket, pulls, onLinked }) {
+  const [selected, setSelected] = useState(null);
+  const [typed, setTyped] = useState('');
+  const [linking, setLinking] = useState(false);
+  const [error, setError] = useState(null);
+
+  const options = useMemo(
+    () =>
+      pulls.map((p) => ({
+        value: pullOptionValue(p),
+        label: `#${p.number} ${p.title} · ${p.headRef} → ${p.baseRef}`,
+      })),
+    [pulls]
+  );
+
+  async function handleLink() {
+    let body = null;
+    if (selected) body = parsePullOption(selected);
+    else if (typed.trim()) {
+      const prNumber = Number(typed.trim().replace(/^#/, ''));
+      body = {
+        prNumber,
+        owner: ticket.repo?.owner,
+        name: ticket.repo?.name,
+      };
+    }
+    if (!body) return;
+    setLinking(true);
+    setError(null);
+    try {
+      await postJson(`/tickets/${ticketKey}/pr/link`, body);
+      setSelected(null);
+      setTyped('');
+      await onLinked();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLinking(false);
+    }
+  }
+
+  const canSubmit = Boolean(selected || typed.trim());
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+      <div style={{ fontSize: 11, color: 'var(--n-muted)' }}>
+        Branch or title doesn't include this ticket key? Attach an existing PR.
+      </div>
+      {options.length > 0 && (
+        <CustomSelect
+          value={selected}
+          placeholder="Choose an open PR…"
+          options={options}
+          disabled={linking}
+          onChange={setSelected}
+          title="Open pull requests"
+        />
+      )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <input
+          className="mono"
+          value={typed}
+          onChange={(e) => setTyped(e.target.value)}
+          placeholder="#18"
+          disabled={linking}
+          style={{
+            width: 72,
+            height: 26,
+            padding: '0 8px',
+            border: '1px solid var(--n-border)',
+            borderRadius: 'var(--r-input)',
+            background: 'var(--n-surface)',
+            color: 'var(--n-body)',
+            fontSize: 11,
+          }}
+        />
+        <button type="button" className="btn btn-outline" onClick={handleLink} disabled={linking || !canSubmit}>
+          {linking ? 'Linking…' : 'Link PR'}
+        </button>
+      </div>
+      {error && <div style={{ fontSize: 11, color: 'var(--danger)' }}>{error}</div>}
+    </div>
+  );
+}
+
 export default function TicketDrawer({ ticketKey, onClose }) {
   const { data: ticket, loading, refresh } = useApi(`/tickets/${ticketKey}`, { intervalMs: 15000 });
   const { data: health } = useApi('/health');
   const { data: transitionsData, refresh: refreshTransitions } = useApi(`/tickets/${ticketKey}/transitions`);
+  const { data: pullsData, refresh: refreshPulls } = useApi(`/tickets/${ticketKey}/pulls`);
   const [transitioning, setTransitioning] = useState(false);
   const [transitionError, setTransitionError] = useState(null);
   const [commentText, setCommentText] = useState('');
@@ -64,6 +165,7 @@ export default function TicketDrawer({ ticketKey, onClose }) {
   async function refreshTicket() {
     await refresh();
     await refreshTransitions();
+    await refreshPulls();
   }
 
   async function handleTransition(name) {
@@ -186,7 +288,7 @@ export default function TicketDrawer({ ticketKey, onClose }) {
     hasBranch && (state === 'unmerged' || state === 'rejected') && hasStagingChanges;
   const canOpenProductionPr = hasBranch && state === 'staging' && hasProductionChanges;
   let stagingPrHint = `Opens a pull request. Merge it onto ${stagingLabel} when you're ready — that moves Jira to In QA.`;
-  if (!hasBranch) stagingPrHint = 'Create a branch first, then do the work, then open this PR.';
+  if (!hasBranch) stagingPrHint = 'Create a branch first, or link an existing PR if its name does not include this ticket key.';
   else if (stagingPrOpen) stagingPrHint = `PR already open into ${stagingLabel}. Merge (QA can approve+merge if they didn't open it), or close it to go back.`;
   else if (onOrPastStaging) stagingPrHint = `Already on ${stagingLabel}.`;
   else if (!hasStagingChanges) {
@@ -264,9 +366,18 @@ export default function TicketDrawer({ ticketKey, onClose }) {
               </div>
               <div>
                 <div style={{ fontSize: 10, color: 'var(--n-muted)' }}>Pull request</div>
-                <div style={{ fontSize: 12, color: 'var(--brand)' }}>
-                  {ticket.prNumber ? `#${ticket.prNumber} → ${prTargetBranch}` : '—'}
-                </div>
+                {ticket.prNumber ? (
+                  <div style={{ fontSize: 12, color: 'var(--brand)' }}>
+                    #{ticket.prNumber} → {prTargetBranch}
+                  </div>
+                ) : (
+                  <LinkPrForm
+                    ticketKey={ticketKey}
+                    ticket={ticket}
+                    pulls={pullsData?.pulls ?? []}
+                    onLinked={refreshTicket}
+                  />
+                )}
               </div>
               <div>
                 <div style={{ fontSize: 10, color: 'var(--n-muted)' }}>Status checks</div>

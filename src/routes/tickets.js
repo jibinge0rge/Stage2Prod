@@ -6,6 +6,7 @@ const { createBranchFromProduction, BranchNotReadyError } = require('../services
 const { openTicketPr, PrNotReadyError } = require('../services/openTicketPr');
 const { closeTicketPr, CloseNotReadyError } = require('../services/closeTicketPr');
 const { compareBranchToTargets } = require('../services/branchDiff');
+const { linkTicketPr, listLinkablePulls, LinkNotReadyError } = require('../services/linkTicketPr');
 
 function rowToApi(row, reposRepo) {
   let repo = null;
@@ -113,6 +114,23 @@ function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller,
     return res.json(body);
   });
 
+  router.get('/tickets/:key/pulls', async (req, res, next) => {
+    if (!ticketsRepo.get(req.params.key)) {
+      return res.status(404).json({ error: 'not_found', message: `no ticket ${req.params.key}` });
+    }
+    try {
+      const result = await listLinkablePulls({
+        ticketKey: req.params.key,
+        ticketsRepo,
+        reposRepo,
+        repoResolver,
+      });
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  });
+
   router.get('/tickets/:key/transitions', async (req, res, next) => {
     if (!ticketsRepo.get(req.params.key)) {
       return res.status(404).json({ error: 'not_found', message: `no ticket ${req.params.key}` });
@@ -210,6 +228,38 @@ function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller,
       return res.status(201).json(rowToApi(updated, reposRepo));
     } catch (err) {
       if (err instanceof PrNotReadyError || err.status === 400) {
+        return res.status(400).json({ error: 'bad_request', message: err.message });
+      }
+      if (err.status === 404) {
+        return res.status(404).json({ error: 'not_found', message: err.message });
+      }
+      return next(err);
+    }
+  });
+
+  router.post('/tickets/:key/pr/link', requireApiToken, async (req, res, next) => {
+    const { key } = req.params;
+    const { prNumber, owner, name } = req.body || {};
+    if (!ticketsRepo.get(key)) return res.status(404).json({ error: 'not_found', message: `no ticket ${key}` });
+    const correlationId = newCorrelationId();
+    try {
+      await linkTicketPr({
+        ticketKey: key,
+        prNumber,
+        owner,
+        name,
+        ticketsRepo,
+        eventsRepo,
+        reposRepo,
+        repoResolver,
+        jira,
+        log: logger.child({ correlationId, ticketKey: key }),
+        correlationId,
+      });
+      const updated = ticketsRepo.get(key);
+      return res.json(rowToApi(updated, reposRepo));
+    } catch (err) {
+      if (err instanceof LinkNotReadyError || err.status === 400) {
         return res.status(400).json({ error: 'bad_request', message: err.message });
       }
       if (err.status === 404) {
