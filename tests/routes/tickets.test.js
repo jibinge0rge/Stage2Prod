@@ -77,6 +77,42 @@ describe('GET /api/tickets', () => {
     expect(ctx.ticketsRepo.get('PROJ-1').check_status).toBeNull();
   });
 
+  it('reclassifies a queued ticket when its PR now targets staging', async () => {
+    const ctx = buildTestCtx();
+    ctx.reposRepo.add('acme', 'widgets', {
+      productionBranch: 'release-4.3.0-v1',
+      stagingBranch: 'develop',
+      jiraProjectKey: 'VIM',
+    });
+    ctx.ticketsRepo.upsert({
+      key: 'VIM-113',
+      jiraStatus: 'In Progress',
+      pipelineState: 'queued',
+      repoOwner: 'acme',
+      repoName: 'widgets',
+    });
+    ctx.ticketsRepo.setGithubFacts('VIM-113', {
+      branchName: 'VIM-113',
+      prNumber: 174,
+      prState: 'open',
+    });
+    ctx.repoResolver.getClient = vi.fn(() => ({
+      getPr: vi.fn().mockResolvedValue({
+        number: 174,
+        state: 'open',
+        merged: false,
+        base: 'develop',
+        head: 'VIM-113',
+        headSha: 'abc',
+      }),
+    }));
+    const app = createApp(ctx);
+
+    const res = await request(app).get('/api/tickets');
+    expect(res.body.tickets[0].pipelineState).toBe('staging_queued');
+    expect(ctx.ticketsRepo.get('VIM-113').pipeline_state).toBe('staging_queued');
+  });
+
   it('GET /api/tickets/:key includes an orchestration timeline from events', async () => {
     const ctx = buildTestCtx();
     ctx.ticketsRepo.upsert({ key: 'PROJ-1', summary: 'Fix login', jiraStatus: 'In QA', pipelineState: 'staging' });

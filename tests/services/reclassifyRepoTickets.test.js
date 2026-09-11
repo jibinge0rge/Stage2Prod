@@ -115,6 +115,23 @@ describe('reclassifyRepoTickets', () => {
     expect(deps.ticketsRepo.get('VIM-115').pipeline_state).toBe(PIPELINE_STATES.STAGING_QUEUED);
   });
 
+  it('flips queued → staging_queued when the live PR base is the staging branch', async () => {
+    const deps = baseSetup({
+      productionBranch: 'release-4.3.0-v1',
+      stagingBranch: 'develop',
+      pipelineState: PIPELINE_STATES.QUEUED,
+      prBase: 'develop',
+    });
+
+    const changes = await reclassifyRepoTickets(deps);
+    expect(changes[0]).toMatchObject({
+      previousState: PIPELINE_STATES.QUEUED,
+      nextState: PIPELINE_STATES.STAGING_QUEUED,
+      prBase: 'develop',
+    });
+    expect(deps.ticketsRepo.get('VIM-115').pipeline_state).toBe(PIPELINE_STATES.STAGING_QUEUED);
+  });
+
   it('no-ops when the PR base already matches the current pipeline role', async () => {
     const deps = baseSetup({
       productionBranch: 'prod',

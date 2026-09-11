@@ -277,7 +277,7 @@ function CandidateRow({ repo, pending, onAdd, branchCache, setBranchCache }) {
 }
 
 export default function Repositories() {
-  const { refreshHealth, showToast } = useAppContext();
+  const { refreshHealth, showToast, runPageRefresh } = useAppContext();
   const { data: watchedData, refresh: refreshWatched } = useApi('/repos', { intervalMs: 20000 });
   useRegisterRefresh(refreshWatched);
 
@@ -369,6 +369,7 @@ export default function Repositories() {
               onSaved={() => {
                 refreshWatched();
                 refreshHealth();
+                runPageRefresh();
               }}
               branchCache={branchCache}
               setBranchCache={setBranchCache}

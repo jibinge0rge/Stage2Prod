@@ -1,5 +1,6 @@
 const express = require('express');
 const { countNonMergeCommits } = require('../lib/gitCommit');
+const { reconcileOpenPrBases } = require('../services/reclassifyRepoTickets');
 
 function formatTime(iso) {
   if (!iso) return '';
@@ -26,8 +27,16 @@ function toBranchTicket(row, side) {
   };
 }
 
-async function branchesForRepo({ repo, ticketsRepo, github }) {
+async function branchesForRepo({ repo, ticketsRepo, reposRepo, github, repoResolver, log }) {
   const { owner, name, productionBranch, stagingBranch } = repo;
+
+  // Fix PR-base drift before grouping (e.g. open PR retargeted to staging
+  // while the ticket is still stuck as "awaiting production").
+  const linked = ticketsRepo
+    .list()
+    .filter((t) => t.repo_owner === owner && t.repo_name === name && t.pr_number);
+  await reconcileOpenPrBases(linked, { ticketsRepo, reposRepo, repoResolver, log });
+
   const [stagingSha, productionSha] = await Promise.all([
     github.getRef(stagingBranch).catch(() => null),
     github.getRef(productionBranch).catch(() => null),
@@ -66,7 +75,7 @@ async function branchesForRepo({ repo, ticketsRepo, github }) {
   };
 }
 
-function createBranchesRouter({ reposRepo, displayGithub, ticketsRepo }) {
+function createBranchesRouter({ reposRepo, displayGithub, ticketsRepo, repoResolver, logger }) {
   const router = express.Router();
 
   router.get('/branches', async (req, res, next) => {
@@ -77,7 +86,10 @@ function createBranchesRouter({ reposRepo, displayGithub, ticketsRepo }) {
           branchesForRepo({
             repo,
             ticketsRepo,
+            reposRepo,
             github: displayGithub.getClient(repo.owner, repo.name),
+            repoResolver,
+            log: logger,
           })
         )
       );

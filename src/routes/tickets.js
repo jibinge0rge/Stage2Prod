@@ -7,6 +7,7 @@ const { openTicketPr, PrNotReadyError } = require('../services/openTicketPr');
 const { closeTicketPr, CloseNotReadyError } = require('../services/closeTicketPr');
 const { compareBranchToTargets } = require('../services/branchDiff');
 const { linkTicketPr, listLinkablePulls, LinkNotReadyError } = require('../services/linkTicketPr');
+const { reconcileOpenPrBases } = require('../services/reclassifyRepoTickets');
 
 function rowToApi(row, reposRepo) {
   let repo = null;
@@ -59,11 +60,15 @@ function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller,
     try {
       const { state, q, repo } = req.query;
       let rows = ticketsRepo.list();
-      if (state && state !== 'all') rows = rows.filter((r) => r.pipeline_state === state);
       if (repo) {
         const [repoOwner, repoName] = String(repo).split('/');
         rows = rows.filter((r) => r.repo_owner === repoOwner && r.repo_name === repoName);
       }
+      // Reconcile before state/q filters so a PR retargeted on GitHub
+      // (e.g. release → develop) is fixed even when the UI is filtered to
+      // the old "Awaiting production" bucket.
+      await reconcileOpenPrBases(rows, { ticketsRepo, reposRepo, repoResolver, log: logger });
+      if (state && state !== 'all') rows = rows.filter((r) => r.pipeline_state === state);
       if (q) {
         const needle = String(q).toLowerCase();
         rows = rows.filter(
@@ -84,6 +89,11 @@ function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller,
   router.get('/tickets/:key', async (req, res, next) => {
     const row = ticketsRepo.get(req.params.key);
     if (!row) return res.status(404).json({ error: 'not_found', message: `no ticket ${req.params.key}` });
+    try {
+      await reconcileOpenPrBases([row], { ticketsRepo, reposRepo, repoResolver, log: logger });
+    } catch (err) {
+      return next(err);
+    }
     const body = { ...rowToApi(row, reposRepo), timeline: eventsRepo.timelineForTicket(req.params.key) };
     if (row.branch_name && row.repo_owner) {
       const repoConfig = reposRepo.get(row.repo_owner, row.repo_name);

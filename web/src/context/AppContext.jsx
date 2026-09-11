@@ -111,6 +111,7 @@ export function AppProvider({ children }) {
     toast,
     showToast,
     registerRefresh,
+    runPageRefresh,
     syncNow,
     syncing,
     registerHealthRefresh,
