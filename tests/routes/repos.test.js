@@ -205,6 +205,60 @@ describe('PATCH /api/repos/:owner/:name', () => {
     expect(res.status).toBe(200);
     expect(res.body.repo.jiraProjectKey).toBe('PROJ');
   });
+
+  it('reclassifies linked tickets when staging/production branches change', async () => {
+    const ctx = buildTestCtx();
+    ctx.reposRepo.add('acme', 'widgets', {
+      productionBranch: 'release-4.3.0-v1',
+      stagingBranch: 'staging',
+      jiraProjectKey: 'VIM',
+    });
+    ctx.ticketsRepo.upsert({
+      key: 'VIM-115',
+      jiraStatus: 'In Progress',
+      pipelineState: 'queued',
+      repoOwner: 'acme',
+      repoName: 'widgets',
+      branchName: 'VIM-115',
+      prNumber: 175,
+      prState: 'open',
+    });
+    ctx.repoResolver = {
+      getClient: () => ({
+        getPr: async () => ({
+          number: 175,
+          state: 'open',
+          merged: false,
+          base: 'release-4.3.0-v1',
+          head: 'VIM-115',
+          headSha: 'abc',
+        }),
+      }),
+      getMatcher: () => ({}),
+      resolveTicket: async () => ({ found: true }),
+      matchByProjectKeyOnly: () => null,
+      invalidateAll: () => {},
+    };
+    ctx.logger = { info: () => {}, warn: () => {}, error: () => {}, child() { return this; } };
+    const app = createApp(ctx);
+
+    const res = await request(app)
+      .patch('/api/repos/acme/widgets')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send({ productionBranch: 'prod', stagingBranch: 'develop' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.repo).toMatchObject({ productionBranch: 'prod', stagingBranch: 'develop' });
+    expect(res.body.reclassified).toEqual([
+      expect.objectContaining({
+        ticketKey: 'VIM-115',
+        nextState: 'unmerged',
+        detached: true,
+      }),
+    ]);
+    expect(ctx.ticketsRepo.get('VIM-115').pipeline_state).toBe('unmerged');
+    expect(ctx.ticketsRepo.get('VIM-115').pr_number).toBeNull();
+  });
 });
 
 describe('DELETE /api/repos/:owner/:name', () => {

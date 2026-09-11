@@ -86,7 +86,7 @@ function JiraProjectKeyInput({ value, onChange, title }) {
   );
 }
 
-function WatchedRepoRow({ repo, onRemove, removing, onSaved, branchCache, setBranchCache }) {
+function WatchedRepoRow({ repo, onRemove, removing, onSaved, branchCache, setBranchCache, showToast }) {
   const [editing, setEditing] = useState(false);
   const [productionBranch, setProductionBranch] = useState(repo.productionBranch);
   const [stagingBranch, setStagingBranch] = useState(repo.stagingBranch);
@@ -109,9 +109,18 @@ function WatchedRepoRow({ repo, onRemove, removing, onSaved, branchCache, setBra
     setSaving(true);
     setError(null);
     try {
-      await patchJson(`/repos/${repo.owner}/${repo.name}`, { productionBranch, stagingBranch, jiraProjectKey });
+      const result = await patchJson(`/repos/${repo.owner}/${repo.name}`, { productionBranch, stagingBranch, jiraProjectKey });
       setEditing(false);
-      onSaved();
+      const moved = result?.reclassified || [];
+      if (moved.length && showToast) {
+        const detached = moved.filter((c) => c.detached).length;
+        const remapped = moved.length - detached;
+        const bits = [];
+        if (remapped) bits.push(`reclassified ${remapped}`);
+        if (detached) bits.push(`detached ${detached} PR(s) that no longer match`);
+        showToast(`Branch settings saved — ${bits.join(', ')}.`);
+      }
+      onSaved(result);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -268,7 +277,7 @@ function CandidateRow({ repo, pending, onAdd, branchCache, setBranchCache }) {
 }
 
 export default function Repositories() {
-  const { refreshHealth } = useAppContext();
+  const { refreshHealth, showToast } = useAppContext();
   const { data: watchedData, refresh: refreshWatched } = useApi('/repos', { intervalMs: 20000 });
   useRegisterRefresh(refreshWatched);
 
@@ -356,6 +365,7 @@ export default function Repositories() {
               repo={r}
               onRemove={removeRepo}
               removing={removingKey === `${r.owner}/${r.name}`}
+              showToast={showToast}
               onSaved={() => {
                 refreshWatched();
                 refreshHealth();

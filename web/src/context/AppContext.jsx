@@ -109,6 +109,7 @@ export function AppProvider({ children }) {
     confirmReset,
     resetting,
     toast,
+    showToast,
     registerRefresh,
     syncNow,
     syncing,

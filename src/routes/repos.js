@@ -1,9 +1,12 @@
 const express = require('express');
 const { requireApiToken } = require('../middleware/auth');
 const { getRepoInfo } = require('../clients/githubAccount');
+const { reclassifyRepoTickets } = require('../services/reclassifyRepoTickets');
+const { randomUUID } = require('crypto');
 
-function createReposRouter({ config, reposRepo }) {
+function createReposRouter({ config, reposRepo, ticketsRepo, eventsRepo, repoResolver, logger }) {
   const router = express.Router();
+  const log = logger || console;
 
   router.get('/repos', (req, res) => {
     res.json({ repos: reposRepo.list({ activeOnly: true }) });
@@ -32,7 +35,7 @@ function createReposRouter({ config, reposRepo }) {
     }
   });
 
-  router.patch('/repos/:owner/:name', requireApiToken, (req, res) => {
+  router.patch('/repos/:owner/:name', requireApiToken, async (req, res, next) => {
     const { owner, name } = req.params;
     if (!reposRepo.isActive(owner, name)) {
       return res.status(404).json({ error: 'not_found', message: `${owner}/${name} is not a watched repo` });
@@ -44,8 +47,30 @@ function createReposRouter({ config, reposRepo }) {
     if (nextProduction === nextStaging) {
       return res.status(400).json({ error: 'bad_request', message: 'productionBranch and stagingBranch must be different' });
     }
+
+    const branchesChanged =
+      nextProduction !== current.productionBranch || nextStaging !== current.stagingBranch;
+
     const repo = reposRepo.update(owner, name, { productionBranch, stagingBranch, jiraProjectKey });
-    return res.json({ repo });
+
+    let reclassified = [];
+    if (branchesChanged && ticketsRepo && eventsRepo && repoResolver) {
+      try {
+        reclassified = await reclassifyRepoTickets({
+          owner,
+          name,
+          repoConfig: repo,
+          ticketsRepo,
+          eventsRepo,
+          repoResolver,
+          log,
+          correlationId: req.correlationId || randomUUID(),
+        });
+      } catch (err) {
+        return next(err);
+      }
+    }
+    return res.json({ repo, reclassified });
   });
 
   router.delete('/repos/:owner/:name', requireApiToken, (req, res) => {

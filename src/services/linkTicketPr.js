@@ -194,4 +194,4 @@ async function linkTicketPr({
   return { linked: true, prNumber: pr.number, pipelineState, target };
 }
 
-module.exports = { linkTicketPr, listLinkablePulls, LinkNotReadyError };
+module.exports = { linkTicketPr, listLinkablePulls, LinkNotReadyError, pipelineStateFor };
