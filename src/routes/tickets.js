@@ -36,28 +36,48 @@ function rowToApi(row, reposRepo) {
   };
 }
 
+async function refreshPendingChecks(rows, { ticketsRepo, repoResolver }) {
+  await Promise.all(
+    rows
+      .filter((r) => r.check_status === 'pending' && r.head_sha && r.repo_owner)
+      .map(async (r) => {
+        const github = repoResolver.getClient(r.repo_owner, r.repo_name);
+        if (typeof github.getCombinedStatus !== 'function') return;
+        const status = await github.getCombinedStatus(r.head_sha).catch(() => null);
+        if (!status) return;
+        ticketsRepo.setCheckStatus(r.ticket_key, status.overall);
+        r.check_status = status.overall;
+      })
+  );
+}
+
 function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller, repoResolver, lockManager, logger }) {
   const router = express.Router();
 
-  router.get('/tickets', (req, res) => {
-    const { state, q, repo } = req.query;
-    let rows = ticketsRepo.list();
-    if (state && state !== 'all') rows = rows.filter((r) => r.pipeline_state === state);
-    if (repo) {
-      const [repoOwner, repoName] = String(repo).split('/');
-      rows = rows.filter((r) => r.repo_owner === repoOwner && r.repo_name === repoName);
+  router.get('/tickets', async (req, res, next) => {
+    try {
+      const { state, q, repo } = req.query;
+      let rows = ticketsRepo.list();
+      if (state && state !== 'all') rows = rows.filter((r) => r.pipeline_state === state);
+      if (repo) {
+        const [repoOwner, repoName] = String(repo).split('/');
+        rows = rows.filter((r) => r.repo_owner === repoOwner && r.repo_name === repoName);
+      }
+      if (q) {
+        const needle = String(q).toLowerCase();
+        rows = rows.filter(
+          (r) =>
+            r.ticket_key.toLowerCase().includes(needle) ||
+            (r.branch_name || '').toLowerCase().includes(needle) ||
+            (r.summary || '').toLowerCase().includes(needle) ||
+            (r.repo_owner ? `${r.repo_owner}/${r.repo_name}`.toLowerCase().includes(needle) : false)
+        );
+      }
+      await refreshPendingChecks(rows, { ticketsRepo, repoResolver });
+      res.json({ tickets: rows.map((r) => rowToApi(r, reposRepo)), total: rows.length });
+    } catch (err) {
+      next(err);
     }
-    if (q) {
-      const needle = String(q).toLowerCase();
-      rows = rows.filter(
-        (r) =>
-          r.ticket_key.toLowerCase().includes(needle) ||
-          (r.branch_name || '').toLowerCase().includes(needle) ||
-          (r.summary || '').toLowerCase().includes(needle) ||
-          (r.repo_owner ? `${r.repo_owner}/${r.repo_name}`.toLowerCase().includes(needle) : false)
-      );
-    }
-    res.json({ tickets: rows.map((r) => rowToApi(r, reposRepo)), total: rows.length });
   });
 
   router.get('/tickets/:key', async (req, res, next) => {
@@ -76,6 +96,13 @@ function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller,
         });
         body.aheadOfStaging = diff.aheadOfStaging;
         body.aheadOfProduction = diff.aheadOfProduction;
+        if (row.head_sha && typeof github.getCombinedStatus === 'function') {
+          const status = await github.getCombinedStatus(row.head_sha).catch(() => null);
+          if (status) {
+            ticketsRepo.setCheckStatus(row.ticket_key, status.overall);
+            body.checkStatus = status.overall;
+          }
+        }
       } catch (err) {
         return next(err);
       }

@@ -33,3 +33,13 @@ describe('ticketsRepo.clearGithubFacts', () => {
     expect(repo.get('PROJ-1').summary).toBe('Task');
   });
 });
+
+describe('ticketsRepo.setCheckStatus', () => {
+  it('can clear a stale pending value', () => {
+    const repo = freshRepo();
+    repo.upsert({ key: 'PROJ-1', summary: 'Task', jiraStatus: 'Done' });
+    repo.setGithubFacts('PROJ-1', { checkStatus: 'pending' });
+    repo.setCheckStatus('PROJ-1', null);
+    expect(repo.get('PROJ-1').check_status).toBeNull();
+  });
+});

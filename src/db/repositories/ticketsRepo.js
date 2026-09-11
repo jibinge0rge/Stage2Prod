@@ -50,6 +50,9 @@ function createTicketsRepo(db) {
       updated_at = ?
     WHERE ticket_key = ?
   `);
+  const setCheckStatusStmt = db.prepare(
+    'UPDATE tickets SET check_status = ?, updated_at = ? WHERE ticket_key = ?'
+  );
   const setRepoStmt = db.prepare(
     'UPDATE tickets SET repo_owner = ?, repo_name = ?, updated_at = ? WHERE ticket_key = ?'
   );
@@ -130,6 +133,9 @@ function createTicketsRepo(db) {
         new Date().toISOString(),
         ticketKey
       );
+    },
+    setCheckStatus(ticketKey, checkStatus) {
+      setCheckStatusStmt.run(checkStatus, new Date().toISOString(), ticketKey);
     },
     setRepo(ticketKey, owner, name) {
       setRepoStmt.run(owner, name, new Date().toISOString(), ticketKey);

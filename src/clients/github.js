@@ -2,6 +2,7 @@ const fetch = require('node-fetch');
 const { withRetry } = require('./httpRetry');
 const { wrapWithDryRun } = require('../lib/dryRun');
 const { logger } = require('../lib/logger');
+const { overallCheckStatus } = require('../lib/checkStatus');
 
 const API_BASE = 'https://api.github.com';
 
@@ -112,14 +113,17 @@ class GitHubClient {
       this._request('GET', `/repos/${this.owner}/${this.repo}/commits/${sha}/status`),
       this._request('GET', `/repos/${this.owner}/${this.repo}/commits/${sha}/check-runs`),
     ]);
-    const combinedState = statusData.state; // success|pending|failure
     const checkRunsList = checkRuns.check_runs || [];
-    const anyFailedCheck = checkRunsList.some((c) => c.conclusion === 'failure' || c.conclusion === 'cancelled' || c.conclusion === 'timed_out');
-    const anyPendingCheck = checkRunsList.some((c) => c.status !== 'completed');
-    let overall = 'passing';
-    if (combinedState === 'failure' || anyFailedCheck) overall = 'failing';
-    else if (combinedState === 'pending' || anyPendingCheck) overall = 'pending';
-    return { overall, combinedState, checkRuns: checkRunsList };
+    const statuses = statusData.statuses || [];
+    return {
+      overall: overallCheckStatus({
+        combinedState: statusData.state,
+        statuses,
+        checkRuns: checkRunsList,
+      }),
+      combinedState: statusData.state,
+      checkRuns: checkRunsList,
+    };
   }
 
   async getMe() {

@@ -140,6 +140,14 @@ describe('GitHubClient', () => {
     });
   });
 
+  it('getCombinedStatus is null when the commit has no statuses or check runs', async () => {
+    nock(BASE).get('/repos/acme/widgets/commits/abc/status').reply(200, { state: 'pending', statuses: [] });
+    nock(BASE).get('/repos/acme/widgets/commits/abc/check-runs').reply(200, { check_runs: [] });
+
+    const result = await client.getCombinedStatus('abc');
+    expect(result.overall).toBeNull();
+  });
+
   it('createRef posts refs/heads/{branch} at the given sha', async () => {
     nock(BASE)
       .post('/repos/acme/widgets/git/refs', { ref: 'refs/heads/feat/PROJ-1', sha: 'abc123' })

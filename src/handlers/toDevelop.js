@@ -42,7 +42,7 @@ async function ensureDevelopPrCore({ ticketKey, log, correlationId, trigger, rep
 
   if (pr.head.sha) {
     const status = await github.getCombinedStatus(pr.head.sha).catch(() => null);
-    if (status) ticketsRepo.setGithubFacts(ticketKey, { checkStatus: status.overall });
+    if (status) ticketsRepo.setCheckStatus(ticketKey, status.overall);
   }
 
   ticketsRepo.setPipelineState(ticketKey, PIPELINE_STATES.QUEUED);

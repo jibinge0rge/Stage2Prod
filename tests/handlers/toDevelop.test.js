@@ -71,6 +71,13 @@ describe('toDevelop handler', () => {
     expect(deps.ticketsRepo.get('PROJ-1').pr_number).toBe(43);
   });
 
+  it('stores no check status when GitHub has zero checks', async () => {
+    const deps = baseDeps();
+    deps.github.getCombinedStatus = vi.fn().mockResolvedValue({ overall: null });
+    await toDevelop(deps);
+    expect(deps.ticketsRepo.get('PROJ-1').check_status).toBeNull();
+  });
+
   it('still stores check status without gating on it — failing checks no longer block the PR being ensured', async () => {
     const deps = baseDeps();
     deps.github.getCombinedStatus = vi.fn().mockResolvedValue({ overall: 'failing' });

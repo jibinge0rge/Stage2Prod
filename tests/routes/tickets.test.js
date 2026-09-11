@@ -56,6 +56,27 @@ describe('GET /api/tickets', () => {
     expect(filtered.body.tickets.map((t) => t.key)).toEqual(['PROJ-1']);
   });
 
+  it('refreshes a stale pending check when GitHub has no statuses or check runs', async () => {
+    const ctx = buildTestCtx();
+    ctx.reposRepo.add('acme', 'widgets');
+    ctx.ticketsRepo.upsert({
+      key: 'PROJ-1',
+      jiraStatus: 'Done',
+      pipelineState: 'develop',
+      repoOwner: 'acme',
+      repoName: 'widgets',
+    });
+    ctx.ticketsRepo.setGithubFacts('PROJ-1', { prNumber: 8, prState: 'merged', checkStatus: 'pending', headSha: 'abc' });
+    ctx.repoResolver.getClient = vi.fn(() => ({
+      getCombinedStatus: vi.fn().mockResolvedValue({ overall: null }),
+    }));
+    const app = createApp(ctx);
+
+    const res = await request(app).get('/api/tickets');
+    expect(res.body.tickets[0].checkStatus).toBeNull();
+    expect(ctx.ticketsRepo.get('PROJ-1').check_status).toBeNull();
+  });
+
   it('GET /api/tickets/:key includes an orchestration timeline from events', async () => {
     const ctx = buildTestCtx();
     ctx.ticketsRepo.upsert({ key: 'PROJ-1', summary: 'Fix login', jiraStatus: 'In QA', pipelineState: 'staging' });
