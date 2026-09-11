@@ -6,7 +6,8 @@ import { useAppContext } from '../context/AppContext';
 import { useRepoFilter, ALL_REPOS } from '../context/RepoFilterContext';
 import FilterChips from '../components/FilterChips';
 import TicketTable from '../components/TicketTable';
-import { isUnderDevelopment } from '../lib/ticketFilters';
+import DownloadTicketsMenu from '../components/DownloadTicketsMenu';
+import { matchesTicketFilter } from '../lib/ticketFilters';
 
 export default function TicketPipeline() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -24,17 +25,14 @@ export default function TicketPipeline() {
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
     return allTickets.filter((t) => {
-      if (filter === 'in_progress') {
-        if (!isUnderDevelopment(t)) return false;
-      } else if (filter !== 'all' && t.pipelineState !== filter) {
-        return false;
-      }
+      if (!matchesTicketFilter(t, filter)) return false;
       if (!q) return true;
       const repoLabel = t.repo ? `${t.repo.owner}/${t.repo.name}` : '';
       return (
         t.key.toLowerCase().includes(q) ||
         (t.branch || '').toLowerCase().includes(q) ||
         (t.summary || '').toLowerCase().includes(q) ||
+        (t.assignee?.name || '').toLowerCase().includes(q) ||
         repoLabel.toLowerCase().includes(q)
       );
     });
@@ -45,7 +43,7 @@ export default function TicketPipeline() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <input
           type="search"
-          placeholder="Ticket key, branch, or repo"
+          placeholder="Ticket, assignee, branch, or repo"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           style={{
@@ -66,6 +64,7 @@ export default function TicketPipeline() {
         <div style={{ fontSize: 11, color: 'var(--n-muted)' }}>
           {rows.length} of {allTickets.length} tickets
         </div>
+        <DownloadTicketsMenu tickets={allTickets} currentRows={rows} currentFilter={filter} />
       </div>
 
       <TicketTable tickets={rows} selectedKey={selectedTicketKey} onSelect={openTicket} />

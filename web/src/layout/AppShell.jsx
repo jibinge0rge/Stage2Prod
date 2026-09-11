@@ -10,6 +10,7 @@ import TicketDrawer from '../components/TicketDrawer';
 import ThemeToggle from '../components/ThemeToggle';
 import RepoSelector from '../components/RepoSelector';
 import { useRepoFilter, repoKey, ALL_REPOS } from '../context/RepoFilterContext';
+import { initialsFromEmail } from '../lib/initialsFromEmail';
 
 function formatEventTime(iso) {
   if (!iso) return '—';
@@ -84,7 +85,9 @@ export default function AppShell() {
           Last event <span style={{ color: 'var(--dark-value)' }}>{formatEventTime(lastEventTs)}</span>
         </div>
         <ThemeToggle />
-        <div className={styles.avatar}>RM</div>
+        <div className={styles.avatar} title={health?.jiraEmail || undefined}>
+          {initialsFromEmail(health?.jiraEmail) || '—'}
+        </div>
         {globalLoading && (
           <div className={styles.loadingBar}>
             <div className={styles.loadingBarFill} />

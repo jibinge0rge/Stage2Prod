@@ -1,7 +1,29 @@
 import { StateBadge } from './Badge';
 import { pipelineStyle, checkStatusColor } from '../lib/styleMaps';
 
-const COLUMNS = '92px minmax(160px,1.3fr) minmax(140px,1fr) minmax(150px,1.1fr) 128px 148px 66px 84px 74px';
+const COLUMNS = '92px minmax(160px,1.3fr) minmax(120px,0.9fr) minmax(140px,1fr) minmax(150px,1.1fr) 128px 148px 66px 84px 74px';
+
+function AssigneeCell({ assignee }) {
+  if (!assignee?.name) {
+    return <div style={{ fontSize: 11, color: 'var(--n-muted)' }}>Unassigned</div>;
+  }
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+      {assignee.avatarUrl ? (
+        <img
+          src={assignee.avatarUrl}
+          alt=""
+          width={16}
+          height={16}
+          style={{ borderRadius: '50%', flexShrink: 0 }}
+        />
+      ) : null}
+      <span className="truncate" style={{ fontSize: 11, color: 'var(--n-body)' }} title={assignee.name}>
+        {assignee.name}
+      </span>
+    </div>
+  );
+}
 
 function relativeUpdated(iso) {
   if (!iso) return '—';
@@ -15,9 +37,10 @@ function relativeUpdated(iso) {
 export default function TicketTable({ tickets, selectedKey, onSelect, rowHeight = 34 }) {
   return (
     <div className="card table-wrap">
-      <div className="table-head-row" style={{ gridTemplateColumns: COLUMNS, minWidth: 1140 }}>
+      <div className="table-head-row" style={{ gridTemplateColumns: COLUMNS, minWidth: 1260 }}>
         <div>Ticket</div>
         <div>Summary</div>
+        <div>Assignee</div>
         <div>Repo</div>
         <div>Branch</div>
         <div>Jira status</div>
@@ -33,13 +56,14 @@ export default function TicketTable({ tickets, selectedKey, onSelect, rowHeight 
           <div
             key={t.key}
             className={`table-row clickable ${selectedKey === t.key ? 'selected' : ''}`}
-            style={{ gridTemplateColumns: COLUMNS, minWidth: 1140, height: rowHeight }}
+            style={{ gridTemplateColumns: COLUMNS, minWidth: 1260, height: rowHeight }}
             onClick={() => onSelect(t.key)}
           >
             <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--n-strongest)' }}>{t.key}</div>
             <div className="truncate" style={{ fontSize: 12, color: 'var(--n-body)' }} title={t.summary || undefined}>
               {t.summary}
             </div>
+            <AssigneeCell assignee={t.assignee} />
             <div className="mono truncate" style={{ fontSize: 11, color: 'var(--n-muted)' }}>
               {t.repo ? `${t.repo.owner}/${t.repo.name}` : '—'}
             </div>

@@ -23,6 +23,7 @@ function createHealthRouter({ config, cursorRepo, lockManager, poller, githubReg
       })),
       jiraJql: buildPollJql(activeRepos, config),
       jiraHost: config.JIRA_HOST || null,
+      jiraEmail: config.JIRA_EMAIL || null,
       poller: {
         running: poller.isRunning(),
         intervalMs: config.POLL_INTERVAL_MS,

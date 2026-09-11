@@ -59,4 +59,12 @@ describe('GET /api/health', () => {
     expect(res.body.jiraJql).toBe(`project in ("PROJ") AND ${config.JIRA_POLL_CLAUSE} ORDER BY updated ASC`);
     expect(res.body.watchedRepos[0].jiraProjectKey).toBe('PROJ');
   });
+
+  it('includes the configured Jira email', async () => {
+    const ctx = buildTestCtx({ config: { ...config, JIRA_EMAIL: 'jibin.george@work.com' } });
+    const app = createApp(ctx);
+
+    const res = await request(app).get('/api/health');
+    expect(res.body.jiraEmail).toBe('jibin.george@work.com');
+  });
 });
