@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useApi, patchJson } from '../lib/api';
 import { useRegisterRefresh } from '../lib/useRegisterRefresh';
 import { useAppContext } from '../context/AppContext';
@@ -73,22 +73,67 @@ function useCountdown(targetIso) {
   return `in ${seconds}s`;
 }
 
+function pickEditorMap(repo, defaults) {
+  const effective = repo?.effectiveStatusHandlerMap;
+  if (effective && typeof effective === 'object' && Object.keys(effective).length > 0) {
+    return effective;
+  }
+  const stored = repo?.statusHandlerMap;
+  if (stored && typeof stored === 'object' && Object.keys(stored).length > 0) {
+    return stored;
+  }
+  if (defaults && typeof defaults === 'object' && Object.keys(defaults).length > 0) {
+    return defaults;
+  }
+  return {};
+}
+
+function mapFingerprint(map) {
+  if (!map || typeof map !== 'object') return 'null';
+  try {
+    return JSON.stringify(map);
+  } catch {
+    return 'null';
+  }
+}
+
 function StatusMapEditor({ repo, defaults, stages, onSaved, showToast }) {
-  const [rows, setRows] = useState(() => mapToRows(repo.effectiveStatusHandlerMap || defaults, stages));
+  const repoId = `${repo.owner}/${repo.name}`;
+  const [rows, setRows] = useState(() => mapToRows(pickEditorMap(repo, defaults), stages));
+  const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-  const repoId = `${repo.owner}/${repo.name}`;
   const lastGoodRef = useRef(rows);
+  // Ignore stale /repos polls that still show a null stored map right after we saved.
+  const expectStoredRef = useRef(false);
 
+  // Switch repo → reload from server. Same-repo /repos polls must not wipe in-progress edits.
   useEffect(() => {
-    const next = mapToRows(repo.effectiveStatusHandlerMap || defaults, stages);
+    const next = mapToRows(pickEditorMap(repo, defaults), stages);
     setRows(next);
     lastGoodRef.current = next;
+    setDirty(false);
     setError(null);
+    expectStoredRef.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repoId]);
 
+  // After save (or external change), adopt the server map once it catches up — never while dirty.
+  const storedFingerprint = mapFingerprint(repo.statusHandlerMap);
+  useEffect(() => {
+    if (dirty) return;
+    if (expectStoredRef.current && !repo.statusHandlerMap) return;
+    if (expectStoredRef.current && repo.statusHandlerMap) {
+      expectStoredRef.current = false;
+    }
+    const next = mapToRows(pickEditorMap(repo, defaults), stages);
+    setRows(next);
+    lastGoodRef.current = next;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [repoId, storedFingerprint, dirty]);
+
   function setRow(id, patch) {
+    setDirty(true);
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
   }
 
@@ -103,11 +148,17 @@ function StatusMapEditor({ repo, defaults, stages, onSaved, showToast }) {
           return;
         }
       }
-      lastGoodRef.current = rows;
       const result = await patchJson(`/repos/${repo.owner}/${repo.name}`, { statusHandlerMap });
-      const next = mapToRows(result?.repo?.effectiveStatusHandlerMap || statusHandlerMap, stages);
+      if (!result?.repo?.statusHandlerMap) {
+        setError('Server did not persist the status map. Try again.');
+        return;
+      }
+      // Prefer what we sent so a stale parent /repos snapshot cannot blank the form.
+      const next = mapToRows(result.repo.effectiveStatusHandlerMap || statusHandlerMap, stages);
       setRows(next);
       lastGoodRef.current = next;
+      setDirty(false);
+      expectStoredRef.current = true;
       onSaved?.(result);
       showToast?.(`Saved status map for ${repo.owner}/${repo.name}`);
     } catch (err) {
@@ -126,6 +177,8 @@ function StatusMapEditor({ repo, defaults, stages, onSaved, showToast }) {
       const next = mapToRows(result?.repo?.effectiveStatusHandlerMap || defaults, stages);
       setRows(next);
       lastGoodRef.current = next;
+      setDirty(false);
+      expectStoredRef.current = false;
       onSaved?.(result);
       showToast?.(`Reset ${repo.owner}/${repo.name} to default status map`);
     } catch (err) {
@@ -227,13 +280,41 @@ export default function RulesPolling() {
   const { data: health, refresh } = useApi('/health', { intervalMs: 15000 });
   const { data: reposData, refresh: refreshRepos } = useApi('/repos', { intervalMs: 20000 });
   const { data: mapMeta } = useApi('/status-map', { intervalMs: 60000 });
-  useRegisterRefresh(() => {
+  const [repoOverrides, setRepoOverrides] = useState({});
+  const refreshAll = useCallback(() => {
     refresh();
     refreshRepos();
-  });
+  }, [refresh, refreshRepos]);
+  useRegisterRefresh(refreshAll);
   const nextPollLabel = useCountdown(health?.poller?.nextPollAt);
 
-  const repos = reposData?.repos ?? [];
+  const repos = useMemo(() => {
+    const list = reposData?.repos ?? [];
+    return list.map((r) => {
+      const override = repoOverrides[repoKey(r)];
+      return override ? { ...r, ...override } : r;
+    });
+  }, [reposData, repoOverrides]);
+
+  // Drop overrides once /repos catches up with the same stored map.
+  useEffect(() => {
+    if (!reposData?.repos?.length) return;
+    setRepoOverrides((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const r of reposData.repos) {
+        const key = repoKey(r);
+        const override = next[key];
+        if (!override) continue;
+        if (mapFingerprint(r.statusHandlerMap) === mapFingerprint(override.statusHandlerMap)) {
+          delete next[key];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [reposData]);
+
   const defaults = mapMeta?.defaults ?? {};
   const stages = mapMeta?.stages ?? STAGE_ORDER.map((id) => ({ id, label: id.replace(/_/g, ' ') }));
 
@@ -244,6 +325,17 @@ export default function RulesPolling() {
     }
     return repos[0];
   }, [repos, selectedRepoKey]);
+
+  const handleMapSaved = useCallback(
+    (result) => {
+      const saved = result?.repo;
+      if (saved?.owner && saved?.name) {
+        setRepoOverrides((prev) => ({ ...prev, [repoKey(saved)]: saved }));
+      }
+      refreshRepos();
+    },
+    [refreshRepos]
+  );
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxWidth: 920 }}>
@@ -270,7 +362,7 @@ export default function RulesPolling() {
             defaults={defaults}
             stages={stages}
             showToast={showToast}
-            onSaved={() => refreshRepos()}
+            onSaved={handleMapSaved}
           />
         )}
       </div>
