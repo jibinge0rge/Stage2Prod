@@ -61,7 +61,11 @@ async function ensureStagingPrCore({
 
   ticketsRepo.setGithubFacts(ticketKey, { prNumber: pr.number, prState: 'open' });
   ticketsRepo.setPipelineState(ticketKey, PIPELINE_STATES.STAGING_QUEUED);
-  await jira.addComment(ticketKey, JIRA_COMMENTS.STAGING_PR_OPENED(pr.number, stagingBranch));
+  try {
+    await jira.addComment(ticketKey, JIRA_COMMENTS.STAGING_PR_OPENED(pr.number, stagingBranch));
+  } catch (err) {
+    log?.warn?.({ ticketKey, err: err.message }, 'jira comment after staging PR open failed; continuing');
+  }
   await syncJiraStatus({
     jira,
     ticketsRepo,

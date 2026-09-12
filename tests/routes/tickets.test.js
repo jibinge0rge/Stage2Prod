@@ -154,7 +154,7 @@ describe('GET /api/tickets', () => {
     expect(res.body.aheadOfProduction).toBe(5);
   });
 
-  it('GET /api/tickets/:key marks mergeBlockedForAuthor when the token opened the PR', async () => {
+  it('GET /api/tickets/:key marks mergeBlockedForAuthor when the token opened the PR and GitHub blocks merge', async () => {
     const ctx = buildTestCtx();
     ctx.reposRepo.add('acme', 'widgets', { productionBranch: 'main', stagingBranch: 'develop' });
     ctx.ticketsRepo.upsert({
@@ -189,6 +189,36 @@ describe('GET /api/tickets', () => {
     expect(res.body.prAuthor).toBe('jibingeorge');
     expect(res.body.githubLogin).toBe('jibingeorge');
     expect(res.body.mergeBlockedForAuthor).toBe(true);
+  });
+
+  it('GET /api/tickets/:key does not block merge for the author when the branch is not protected', async () => {
+    const ctx = buildTestCtx();
+    ctx.reposRepo.add('acme', 'widgets', { productionBranch: 'main', stagingBranch: 'staging' });
+    ctx.ticketsRepo.upsert({
+      key: 'PROJ-1',
+      summary: 'Fix',
+      jiraStatus: 'Ready for Release',
+      pipelineState: 'queued',
+      repoOwner: 'acme',
+      repoName: 'widgets',
+    });
+    ctx.ticketsRepo.setGithubFacts('PROJ-1', { branchName: 'feat/x', prNumber: 11, prState: 'open' });
+    ctx.repoResolver.getClient = vi.fn(() => ({
+      compareCommits: vi.fn().mockResolvedValue({ aheadBy: 1, behindBy: 0 }),
+      getPr: vi.fn().mockResolvedValue({
+        number: 11,
+        state: 'open',
+        author: 'jibingeorge',
+        mergeableState: 'clean',
+        base: 'main',
+        head: 'feat/x',
+      }),
+      getMe: vi.fn().mockResolvedValue({ login: 'jibingeorge' }),
+    }));
+    const app = createApp(ctx);
+
+    const res = await request(app).get('/api/tickets/PROJ-1');
+    expect(res.body.mergeBlockedForAuthor).toBe(false);
   });
 
   it('GET /api/tickets/:key allows merge when the token is not the PR author', async () => {

@@ -61,7 +61,11 @@ async function ensureDevelopPrCore({
   }
 
   ticketsRepo.setPipelineState(ticketKey, PIPELINE_STATES.QUEUED);
-  await jira.addComment(ticketKey, JIRA_COMMENTS.DEVELOP_PR_OPENED(pr.number, productionBranch));
+  try {
+    await jira.addComment(ticketKey, JIRA_COMMENTS.DEVELOP_PR_OPENED(pr.number, productionBranch));
+  } catch (err) {
+    log?.warn?.({ ticketKey, err: err.message }, 'jira comment after production PR open failed; continuing');
+  }
   await syncJiraStatus({
     jira,
     ticketsRepo,

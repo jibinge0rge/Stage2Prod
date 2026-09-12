@@ -304,12 +304,12 @@ export default function TicketDrawer({ ticketKey, onClose }) {
   const mergeBlockedForAuthor = Boolean(ticket.mergeBlockedForAuthor);
   const mergeDisabled = merging || closing || mergeBlockedForAuthor;
   const mergeBlockedTitle = mergeBlockedForAuthor
-    ? `You opened PR #${ticket.prNumber} as ${ticket.prAuthor}. Branch protection requires another reviewer — ask a teammate to approve and merge.`
+    ? `You opened PR #${ticket.prNumber} as ${ticket.prAuthor}. GitHub is blocking the merge (required reviews or checks) — ask a teammate to approve and merge.`
     : undefined;
   let stagingPrHint = `Opens a pull request. Merge it onto ${stagingLabel} when you're ready — that moves Jira to In QA.`;
   if (!hasBranch) stagingPrHint = 'Create a branch first, or link an existing PR if its name does not include this ticket key.';
   else if (stagingPrOpen && mergeBlockedForAuthor) {
-    stagingPrHint = `PR #${ticket.prNumber} is open into ${stagingLabel}, but you're the author and the branch is protected — ask someone else to approve and merge.`;
+    stagingPrHint = `PR #${ticket.prNumber} is open into ${stagingLabel}, but you're the author and GitHub is blocking the merge (reviews/checks required) — ask someone else to approve and merge.`;
   } else if (stagingPrOpen) stagingPrHint = `PR already open into ${stagingLabel}. Merge (QA can approve+merge if they didn't open it), or close it to go back.`;
   else if (onOrPastStaging) stagingPrHint = `Already on ${stagingLabel}.`;
   else if (!hasStagingChanges) {
@@ -320,7 +320,7 @@ export default function TicketDrawer({ ticketKey, onClose }) {
   if (!onOrPastStaging && !productionPrOpen) {
     productionPrHint = `Send this to ${stagingLabel} and get QA approval first.`;
   } else if (productionPrOpen && mergeBlockedForAuthor) {
-    productionPrHint = `PR #${ticket.prNumber} is open into ${productionLabel}, but you're the author and the branch is protected — ask someone else to approve and merge.`;
+    productionPrHint = `PR #${ticket.prNumber} is open into ${productionLabel}, but you're the author and GitHub is blocking the merge (reviews/checks required) — ask someone else to approve and merge.`;
   } else if (productionPrOpen) {
     productionPrHint = `PR already open into ${productionLabel}. Merge to ship (approves first if you're not the author), or close it to stay on ${stagingLabel}.`;
   } else if (onOrPastProduction) {
@@ -569,7 +569,7 @@ export default function TicketDrawer({ ticketKey, onClose }) {
           )}
           {mergeBlockedForAuthor && (
             <div style={{ fontSize: 11, color: 'var(--warning)' }}>
-              Merge is disabled for you — you authored this PR and GitHub branch protection needs another reviewer.
+              Merge is disabled for you — you authored this PR and GitHub requires another reviewer or passing checks before it can merge.
             </div>
           )}
           {prError && <div style={{ fontSize: 11, color: 'var(--danger)' }}>{prError}</div>}

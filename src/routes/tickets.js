@@ -123,8 +123,9 @@ function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller,
     }
 
     // When a PR is open, surface whether the Stage2Prod GitHub token is the
-    // PR author. Authors cannot approve their own PR, so protected branches
-    // with required reviews will never merge for them — grey out Merge in the UI.
+    // PR author and GitHub has the merge blocked (required reviews / checks).
+    // Authors cannot approve their own PR — grey out Merge only in that case.
+    // Unprotected branches stay mergeable for the author (mergeable_state=clean).
     body.prAuthor = null;
     body.prMergeableState = null;
     body.githubLogin = null;
@@ -144,10 +145,7 @@ function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller,
             body.prAuthor
             && body.githubLogin
             && body.prAuthor.toLowerCase() === body.githubLogin.toLowerCase();
-          // Block when the token is the author. Required-review protection
-          // makes self-merge impossible; even without it the product expects
-          // a non-author (e.g. QA) to click Merge.
-          body.mergeBlockedForAuthor = Boolean(sameAuthor);
+          body.mergeBlockedForAuthor = Boolean(sameAuthor && body.prMergeableState === 'blocked');
         } catch {
           // Leave merge affordances optimistic if GitHub is unreachable.
         }
