@@ -17,7 +17,7 @@ function startOfTodayIso() {
 }
 
 function withRepoParam(path, selectedRepoKey) {
-  if (selectedRepoKey === ALL_REPOS) return path;
+  if (!selectedRepoKey || selectedRepoKey === ALL_REPOS) return path;
   const sep = path.includes('?') ? '&' : '?';
   return `${path}${sep}repo=${encodeURIComponent(selectedRepoKey)}`;
 }
@@ -89,8 +89,8 @@ export default function Overview() {
 
   const allRepoEntries = branchesData?.repos ?? [];
   const repoEntries =
-    selectedRepoKey === ALL_REPOS
-      ? allRepoEntries
+    !selectedRepoKey || selectedRepoKey === ALL_REPOS
+      ? allRepoEntries.slice(0, 1)
       : allRepoEntries.filter((entry) => repoKey(entry.repo) === selectedRepoKey);
 
   const untrackedByRepo = new Map(

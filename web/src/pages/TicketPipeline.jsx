@@ -20,7 +20,9 @@ export default function TicketPipeline() {
   const { selectedRepoKey } = useRepoFilter();
 
   const ticketsPath =
-    selectedRepoKey === ALL_REPOS ? '/tickets' : `/tickets?repo=${encodeURIComponent(selectedRepoKey)}`;
+    !selectedRepoKey || selectedRepoKey === ALL_REPOS
+      ? '/tickets'
+      : `/tickets?repo=${encodeURIComponent(selectedRepoKey)}`;
   const { data, refresh } = useApi(ticketsPath, { intervalMs: 15000 });
   const { data: reposData } = useApi('/repos', { intervalMs: 30000 });
   useRegisterRefresh(refresh);

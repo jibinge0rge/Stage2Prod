@@ -7,9 +7,12 @@ const RepoFilterContext = createContext(null);
 
 function readStored() {
   try {
-    return localStorage.getItem(STORAGE_KEY) || ALL;
+    const stored = localStorage.getItem(STORAGE_KEY);
+    // Legacy "all" is no longer a valid selection — treat as unset.
+    if (!stored || stored === ALL) return null;
+    return stored;
   } catch {
-    return ALL;
+    return null;
   }
 }
 

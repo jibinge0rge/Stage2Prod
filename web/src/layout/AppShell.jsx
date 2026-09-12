@@ -56,11 +56,9 @@ export default function AppShell() {
   // back to generic role labels rather than presenting one repo's names
   // as universal.
   const focusedRepo =
-    selectedRepoKey !== ALL_REPOS
+    (selectedRepoKey && selectedRepoKey !== ALL_REPOS
       ? watchedRepos.find((r) => repoKey(r) === selectedRepoKey)
-      : watchedRepos.length === 1
-        ? watchedRepos[0]
-        : null;
+      : null) || watchedRepos[0] || null;
   const productionLabel = focusedRepo?.productionBranch ?? 'Production';
   const stagingLabel = focusedRepo?.stagingBranch ?? 'Staging';
 

@@ -134,7 +134,9 @@ export default function StagingSandbox() {
 
   const allRepos = data?.repos ?? [];
   const repos =
-    selectedRepoKey === ALL_REPOS ? allRepos : allRepos.filter((entry) => repoKey(entry.repo) === selectedRepoKey);
+    !selectedRepoKey || selectedRepoKey === ALL_REPOS
+      ? allRepos.slice(0, 1)
+      : allRepos.filter((entry) => repoKey(entry.repo) === selectedRepoKey);
 
   if (data && allRepos.length === 0) {
     return (

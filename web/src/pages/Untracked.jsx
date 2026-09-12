@@ -93,7 +93,10 @@ function RepoUntrackedSection({ entry }) {
 
 export default function Untracked() {
   const { selectedRepoKey } = useRepoFilter();
-  const path = selectedRepoKey === ALL_REPOS ? '/untracked' : `/untracked?repo=${encodeURIComponent(selectedRepoKey)}`;
+  const path =
+    !selectedRepoKey || selectedRepoKey === ALL_REPOS
+      ? '/untracked'
+      : `/untracked?repo=${encodeURIComponent(selectedRepoKey)}`;
   const { data, refresh } = useApi(path, { intervalMs: 30000 });
   useRegisterRefresh(refresh);
 

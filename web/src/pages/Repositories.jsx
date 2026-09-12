@@ -24,17 +24,17 @@ function guessStagingBranch(branches, productionBranch) {
  * fallback if the list couldn't be fetched (so a real name can still be
  * typed rather than blocking on the picker).
  */
-function BranchSelect({ branches, loading, error, value, onChange, title }) {
+function BranchSelect({ branches, loading, error, value, onChange, title, style = fieldWidth }) {
   if (branches) {
     const options = branches.includes(value) ? branches : [value, ...branches];
-    return <CustomSelect style={fieldWidth} value={value} options={options} onChange={onChange} title={title} />;
+    return <CustomSelect style={style} value={value} options={options} onChange={onChange} title={title} />;
   }
   if (loading) {
-    return <CustomSelect style={fieldWidth} value={null} options={[]} placeholder="Loading…" disabled onChange={() => {}} title={title} />;
+    return <CustomSelect style={style} value={null} options={[]} placeholder="Loading…" disabled onChange={() => {}} title={title} />;
   }
   return (
     <input
-      style={{ ...fieldWidth, height: 26, padding: '0 8px', border: '1px solid var(--n-border)', borderRadius: 'var(--r-input)', fontSize: 11, background: 'var(--n-surface)', color: 'var(--n-body)' }}
+      style={{ ...style, height: 26, padding: '0 8px', border: '1px solid var(--n-border)', borderRadius: 'var(--r-input)', fontSize: 11, background: 'var(--n-surface)', color: 'var(--n-body)' }}
       value={value}
       onChange={(e) => onChange(e.target.value)}
       title={error ? `Couldn't load branch list — type a name instead (${error})` : title}
@@ -74,10 +74,20 @@ function useRepoBranches(owner, name, cache, setCache, enabled = true) {
   };
 }
 
-function JiraProjectKeyInput({ value, onChange, title }) {
+function JiraProjectKeyInput({ value, onChange, title, style }) {
   return (
     <input
-      style={{ width: 110, height: 26, padding: '0 8px', border: '1px solid var(--n-border)', borderRadius: 'var(--r-input)', fontSize: 11, background: 'var(--n-surface)', color: 'var(--n-body)' }}
+      style={{
+        width: 110,
+        height: 26,
+        padding: '0 8px',
+        border: '1px solid var(--n-border)',
+        borderRadius: 'var(--r-input)',
+        fontSize: 11,
+        background: 'var(--n-surface)',
+        color: 'var(--n-body)',
+        ...style,
+      }}
       value={value}
       onChange={(e) => onChange(e.target.value.toUpperCase())}
       placeholder="PROJ"
@@ -230,48 +240,96 @@ function CandidateRow({ repo, pending, onAdd, branchCache, setBranchCache }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [branches]);
 
+  const selectWidth = { width: '100%', minWidth: 0 };
+
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 4px', borderBottom: '1px solid var(--n-hairline)' }}>
-      <span className="mono truncate" style={{ fontSize: 12, flex: 1, minWidth: 0 }}>
-        {repo.fullName}
-      </span>
-      {repo.private && (
-        <span className="badge" style={{ background: 'var(--n-fill-subtle)', color: 'var(--n-muted)' }}>
-          private
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+        padding: '12px 4px',
+        borderBottom: '1px solid var(--n-hairline)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+        <span className="mono truncate" style={{ fontSize: 12, flex: 1, minWidth: 0, fontWeight: 500, color: 'var(--n-strongest)' }}>
+          {repo.fullName}
         </span>
-      )}
+        {repo.private && (
+          <span className="badge" style={{ background: 'var(--n-fill-subtle)', color: 'var(--n-muted)' }}>
+            private
+          </span>
+        )}
+        {repo.watched && (
+          <span className="badge" style={{ background: 'var(--success-fill)', color: 'var(--success-text)' }}>
+            watching
+          </span>
+        )}
+      </div>
       {!repo.watched && (
-        <>
-          <BranchSelect
-            branches={branches}
-            loading={loading}
-            error={error}
-            value={productionBranch}
-            onChange={setProductionBranch}
-            title="Production branch"
-          />
-          <BranchSelect
-            branches={branches}
-            loading={loading}
-            error={error}
-            value={stagingBranch}
-            onChange={(v) => {
-              setPickedStaging(true);
-              setStagingBranch(v);
-            }}
-            title="Staging branch"
-          />
-          <JiraProjectKeyInput value={jiraProjectKey} onChange={setJiraProjectKey} title="Jira project key (optional)" />
-        </>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 1.2fr) 100px auto',
+            gap: 8,
+            alignItems: 'center',
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            <div className="eyebrow" style={{ marginBottom: 4 }}>
+              Production
+            </div>
+            <BranchSelect
+              branches={branches}
+              loading={loading}
+              error={error}
+              value={productionBranch}
+              onChange={setProductionBranch}
+              title="Production branch"
+              style={selectWidth}
+            />
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <div className="eyebrow" style={{ marginBottom: 4 }}>
+              Staging
+            </div>
+            <BranchSelect
+              branches={branches}
+              loading={loading}
+              error={error}
+              value={stagingBranch}
+              onChange={(v) => {
+                setPickedStaging(true);
+                setStagingBranch(v);
+              }}
+              title="Staging branch"
+              style={selectWidth}
+            />
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <div className="eyebrow" style={{ marginBottom: 4 }}>
+              Jira key
+            </div>
+            <JiraProjectKeyInput
+              value={jiraProjectKey}
+              onChange={setJiraProjectKey}
+              title="Jira project key (optional)"
+              style={{ width: '100%' }}
+            />
+          </div>
+          <div style={{ alignSelf: 'end' }}>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={pending}
+              onClick={() => onAdd(repo, { productionBranch, stagingBranch, jiraProjectKey })}
+            >
+              {pending ? 'Adding…' : 'Watch'}
+            </button>
+          </div>
+        </div>
       )}
-      <button
-        type="button"
-        className={repo.watched ? 'btn btn-outline' : 'btn btn-primary'}
-        disabled={repo.watched || pending}
-        onClick={() => onAdd(repo, { productionBranch, stagingBranch, jiraProjectKey })}
-      >
-        {repo.watched ? 'Watching' : pending ? 'Adding…' : 'Watch'}
-      </button>
     </div>
   );
 }
@@ -379,51 +437,93 @@ export default function Repositories() {
       </div>
 
       {pickerOpen && (
-        <div className="card" style={{ padding: 14 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div className="card-title">Connect a repository</div>
-            <div className="spacer" />
-            <button type="button" className="btn btn-plain" onClick={() => setPickerOpen(false)}>
-              Close
-            </button>
-          </div>
-          <input
-            type="search"
-            placeholder="Search your repositories"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Connect a repository"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 90,
+            background: 'rgba(16, 16, 16, 0.4)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 24,
+          }}
+          onClick={() => setPickerOpen(false)}
+        >
+          <div
+            className="card"
             style={{
-              width: '100%',
-              height: 28,
-              padding: '0 10px',
-              border: '1px solid var(--n-border)',
-              borderRadius: 'var(--r-input)',
-              fontSize: 12,
-              marginTop: 10,
+              width: 'min(720px, 100%)',
+              maxHeight: 'min(640px, calc(100vh - 48px))',
+              display: 'flex',
+              flexDirection: 'column',
+              padding: 0,
+              overflow: 'hidden',
+              boxShadow: 'var(--shadow-modal)',
             }}
-          />
-          {addError && <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 8 }}>{addError}</div>}
-          {candidatesError && (
-            <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 8 }}>
-              Couldn't list repositories: {candidatesError}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '14px 16px',
+                borderBottom: '1px solid var(--n-hairline)',
+                flexShrink: 0,
+              }}
+            >
+              <div className="card-title">Connect a repository</div>
+              <div className="spacer" />
+              <button type="button" className="btn btn-plain" onClick={() => setPickerOpen(false)}>
+                Close
+              </button>
             </div>
-          )}
-          <div style={{ maxHeight: 380, overflowY: 'auto', marginTop: 10 }}>
-            {candidates === null && !candidatesError ? (
-              <div className="empty-state">Loading repositories the token can see…</div>
-            ) : (
-              filteredCandidates.map((r) => (
-                <CandidateRow
-                  key={`${r.owner}/${r.name}`}
-                  repo={r}
-                  pending={pendingKey === `${r.owner}/${r.name}`}
-                  onAdd={addRepo}
-                  branchCache={branchCache}
-                  setBranchCache={setBranchCache}
-                />
-              ))
-            )}
-            {candidates && filteredCandidates.length === 0 && <div className="empty-state">No matches.</div>}
+            <div style={{ padding: '12px 16px', flexShrink: 0 }}>
+              <input
+                type="search"
+                placeholder="Search your repositories"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                autoFocus
+                style={{
+                  width: '100%',
+                  height: 32,
+                  padding: '0 10px',
+                  border: '1px solid var(--n-border)',
+                  borderRadius: 'var(--r-input)',
+                  fontSize: 12,
+                  background: 'var(--n-surface)',
+                  color: 'var(--n-body)',
+                }}
+              />
+              {addError && <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 8 }}>{addError}</div>}
+              {candidatesError && (
+                <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 8 }}>
+                  Couldn't list repositories: {candidatesError}
+                </div>
+              )}
+            </div>
+            <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0 16px 12px' }}>
+              {candidates === null && !candidatesError ? (
+                <div className="empty-state">Loading repositories the token can see…</div>
+              ) : (
+                filteredCandidates.map((r) => (
+                  <CandidateRow
+                    key={`${r.owner}/${r.name}`}
+                    repo={r}
+                    pending={pendingKey === `${r.owner}/${r.name}`}
+                    onAdd={addRepo}
+                    branchCache={branchCache}
+                    setBranchCache={setBranchCache}
+                  />
+                ))
+              )}
+              {candidates && filteredCandidates.length === 0 && <div className="empty-state">No matches.</div>}
+            </div>
           </div>
         </div>
       )}
