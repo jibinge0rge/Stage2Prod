@@ -33,9 +33,9 @@ function mapToRows(map, stages) {
 function rowsToMap(rows) {
   const out = {};
   for (const row of rows) {
-    const jiraStatus = row.jiraStatus.trim();
+    const jiraStatus = (row.jiraStatus || '').trim();
     if (!jiraStatus) continue;
-    const match = row.match
+    const match = String(row.match || '')
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean);
@@ -74,13 +74,16 @@ function useCountdown(targetIso) {
 }
 
 function pickEditorMap(repo, defaults) {
+  // Prefer the stored map when present so alias edits aren't masked by
+  // effectiveStatusHandlerMap's default fill for any missing stage.
+  const stored = repo?.statusHandlerMap;
+  if (stored && typeof stored === 'object' && Object.keys(stored).length > 0) {
+    const defaultsMap = defaults && Object.keys(defaults).length ? defaults : {};
+    return { ...defaultsMap, ...stored };
+  }
   const effective = repo?.effectiveStatusHandlerMap;
   if (effective && typeof effective === 'object' && Object.keys(effective).length > 0) {
     return effective;
-  }
-  const stored = repo?.statusHandlerMap;
-  if (stored && typeof stored === 'object' && Object.keys(stored).length > 0) {
-    return stored;
   }
   if (defaults && typeof defaults === 'object' && Object.keys(defaults).length > 0) {
     return defaults;
@@ -104,8 +107,9 @@ function StatusMapEditor({ repo, defaults, stages, onSaved, showToast }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const lastGoodRef = useRef(rows);
-  // Ignore stale /repos polls that still show a null stored map right after we saved.
-  const expectStoredRef = useRef(false);
+  // After save, ignore parent /repos until it shows the fingerprint we just wrote.
+  // Otherwise dirty→false reapplies a stale statusHandlerMap and wipes Also match.
+  const pendingFingerprintRef = useRef(null);
 
   // Switch repo → reload from server. Same-repo /repos polls must not wipe in-progress edits.
   useEffect(() => {
@@ -114,17 +118,16 @@ function StatusMapEditor({ repo, defaults, stages, onSaved, showToast }) {
     lastGoodRef.current = next;
     setDirty(false);
     setError(null);
-    expectStoredRef.current = false;
+    pendingFingerprintRef.current = null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repoId]);
 
-  // After save (or external change), adopt the server map once it catches up — never while dirty.
   const storedFingerprint = mapFingerprint(repo.statusHandlerMap);
   useEffect(() => {
     if (dirty) return;
-    if (expectStoredRef.current && !repo.statusHandlerMap) return;
-    if (expectStoredRef.current && repo.statusHandlerMap) {
-      expectStoredRef.current = false;
+    if (pendingFingerprintRef.current) {
+      if (storedFingerprint !== pendingFingerprintRef.current) return;
+      pendingFingerprintRef.current = null;
     }
     const next = mapToRows(pickEditorMap(repo, defaults), stages);
     setRows(next);
@@ -153,12 +156,15 @@ function StatusMapEditor({ repo, defaults, stages, onSaved, showToast }) {
         setError('Server did not persist the status map. Try again.');
         return;
       }
-      // Prefer what we sent so a stale parent /repos snapshot cannot blank the form.
-      const next = mapToRows(result.repo.effectiveStatusHandlerMap || statusHandlerMap, stages);
+      // Display from the stored map (includes aliases). Avoid effective-defaults masking match.
+      const next = mapToRows(
+        { ...(defaults || {}), ...result.repo.statusHandlerMap },
+        stages
+      );
       setRows(next);
       lastGoodRef.current = next;
+      pendingFingerprintRef.current = mapFingerprint(result.repo.statusHandlerMap);
       setDirty(false);
-      expectStoredRef.current = true;
       onSaved?.(result);
       showToast?.(`Saved status map for ${repo.owner}/${repo.name}`);
     } catch (err) {
@@ -178,7 +184,7 @@ function StatusMapEditor({ repo, defaults, stages, onSaved, showToast }) {
       setRows(next);
       lastGoodRef.current = next;
       setDirty(false);
-      expectStoredRef.current = false;
+      pendingFingerprintRef.current = 'null';
       onSaved?.(result);
       showToast?.(`Reset ${repo.owner}/${repo.name} to default status map`);
     } catch (err) {

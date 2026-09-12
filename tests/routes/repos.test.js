@@ -173,6 +173,37 @@ describe('PATCH /api/repos/:owner/:name', () => {
     expect(res.body.repo.effectiveStatusHandlerMap.in_progress.jiraStatus).toBe('Doing');
   });
 
+  it('persists Also match aliases on the status map', async () => {
+    const ctx = buildTestCtx();
+    ctx.reposRepo.add('acme', 'widgets');
+    const app = createApp(ctx);
+
+    const res = await request(app)
+      .patch('/api/repos/acme/widgets')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send({
+        statusHandlerMap: {
+          open: { jiraStatus: 'Open', match: ['To Do', 'Backlog'] },
+          in_progress: { jiraStatus: 'In Progress', match: ['Doing'] },
+          in_qa: { jiraStatus: 'In QA', match: [] },
+          ready_for_release: { jiraStatus: 'Ready for Release', match: ['Approved'] },
+          done: { jiraStatus: 'Done', match: [] },
+        },
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.repo.statusHandlerMap.open.match).toEqual(['Open', 'To Do', 'Backlog']);
+    expect(res.body.repo.statusHandlerMap.in_progress.match).toEqual(['In Progress', 'Doing']);
+    expect(res.body.repo.statusHandlerMap.ready_for_release.match).toEqual([
+      'Ready for Release',
+      'Approved',
+    ]);
+
+    const again = await request(app).get('/api/repos');
+    const repo = again.body.repos.find((r) => r.owner === 'acme' && r.name === 'widgets');
+    expect(repo.statusHandlerMap.open.match).toEqual(['Open', 'To Do', 'Backlog']);
+  });
+
   it('400s on an unknown stage in the status map', async () => {
     const ctx = buildTestCtx();
     ctx.reposRepo.add('acme', 'widgets');

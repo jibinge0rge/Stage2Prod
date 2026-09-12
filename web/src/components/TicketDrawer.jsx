@@ -267,6 +267,18 @@ export default function TicketDrawer({ ticketKey, onClose }) {
   }
 
   const jiraUrl = health?.jiraHost ? `https://${health.jiraHost}/browse/${ticket.key}` : null;
+  const githubPrUrl =
+    ticket.repo?.owner && ticket.repo?.name && ticket.prNumber
+      ? `https://github.com/${ticket.repo.owner}/${ticket.repo.name}/pull/${ticket.prNumber}`
+      : null;
+  const githubUrl =
+    githubPrUrl
+    || (ticket.repo?.owner && ticket.repo?.name && ticket.branch
+      ? `https://github.com/${ticket.repo.owner}/${ticket.repo.name}/tree/${encodeURIComponent(ticket.branch).replace(/%2F/g, '/')}`
+      : null)
+    || (ticket.repo?.owner && ticket.repo?.name
+      ? `https://github.com/${ticket.repo.owner}/${ticket.repo.name}`
+      : null);
   const productionLabel = ticket.repo?.productionBranch ?? 'production';
   const stagingLabel = ticket.repo?.stagingBranch ?? 'staging';
   const state = ticket.pipelineState;
@@ -613,6 +625,25 @@ export default function TicketDrawer({ ticketKey, onClose }) {
           title={jiraUrl ? undefined : 'JIRA_HOST not configured'}
         >
           Open in Jira
+        </a>
+        <a
+          href={githubUrl ?? undefined}
+          target="_blank"
+          rel="noreferrer"
+          className="btn btn-outline"
+          aria-disabled={!githubUrl}
+          style={!githubUrl ? { pointerEvents: 'none', opacity: 0.6 } : undefined}
+          title={
+            githubPrUrl
+              ? `Open PR #${ticket.prNumber} on GitHub`
+              : githubUrl
+                ? ticket.branch
+                  ? `Open branch ${ticket.branch} on GitHub`
+                  : 'Open repository on GitHub'
+                : 'No linked repo or pull request yet'
+          }
+        >
+          Open in GitHub
         </a>
         <div className="spacer" />
         <span style={{ fontSize: 11, color: 'var(--n-muted)' }}>{ticket.updatedAt ? new Date(ticket.updatedAt).toLocaleString() : ''}</span>

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useApi } from '../lib/api';
 import { useRegisterRefresh } from '../lib/useRegisterRefresh';
@@ -9,10 +9,13 @@ import TicketTable from '../components/TicketTable';
 import DownloadTicketsMenu from '../components/DownloadTicketsMenu';
 import { matchesTicketFilter, buildTicketFilters } from '../lib/ticketFilters';
 
+const PAGE_SIZE = 25;
+
 export default function TicketPipeline() {
   const [searchParams, setSearchParams] = useSearchParams();
   const filter = searchParams.get('filter') || 'all';
   const [query, setQuery] = useState('');
+  const [page, setPage] = useState(0);
   const { selectedTicketKey, openTicket } = useAppContext();
   const { selectedRepoKey } = useRepoFilter();
 
@@ -58,6 +61,23 @@ export default function TicketPipeline() {
     });
   }, [allTickets, filter, query, statusHandlerMap]);
 
+  // Reset to first page when the visible set changes.
+  useEffect(() => {
+    setPage(0);
+  }, [filter, query, selectedRepoKey]);
+
+  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE) || 1);
+  const safePage = Math.min(page, pageCount - 1);
+  const offset = safePage * PAGE_SIZE;
+  const pageRows = rows.slice(offset, offset + PAGE_SIZE);
+  const showingFrom = rows.length ? offset + 1 : 0;
+  const showingTo = offset + pageRows.length;
+
+  useEffect(() => {
+    if (page !== safePage) setPage(safePage);
+  }, [page, safePage]);
+
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -94,7 +114,32 @@ export default function TicketPipeline() {
         />
       </div>
 
-      <TicketTable tickets={rows} selectedKey={selectedTicketKey} onSelect={openTicket} />
+      <TicketTable tickets={pageRows} selectedKey={selectedTicketKey} onSelect={openTicket} />
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: 'var(--n-muted)' }}>
+        <span>
+          Showing {showingFrom}–{showingTo} of {rows.length}
+          {pageCount > 1 ? ` · page ${safePage + 1} of ${pageCount}` : ''}
+        </span>
+        <div className="spacer" />
+        <button
+          type="button"
+          className="btn btn-outline"
+          disabled={safePage <= 0}
+          onClick={() => setPage((p) => Math.max(0, p - 1))}
+        >
+          Previous
+        </button>
+        <button
+          type="button"
+          className="btn btn-outline"
+          disabled={safePage >= pageCount - 1 || rows.length === 0}
+          onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+        >
+          Next
+        </button>
+      </div>
+
       <div style={{ fontSize: 11, color: 'var(--n-muted)' }}>
         Rows are read-only records of what the service did. Filters are the five lifecycle
         stages — map your Jira status names under Rules &amp; polling.
