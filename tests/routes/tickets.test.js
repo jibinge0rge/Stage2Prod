@@ -154,6 +154,73 @@ describe('GET /api/tickets', () => {
     expect(res.body.aheadOfProduction).toBe(5);
   });
 
+  it('GET /api/tickets/:key marks mergeBlockedForAuthor when the token opened the PR', async () => {
+    const ctx = buildTestCtx();
+    ctx.reposRepo.add('acme', 'widgets', { productionBranch: 'main', stagingBranch: 'develop' });
+    ctx.ticketsRepo.upsert({
+      key: 'VIM-113',
+      summary: 'Tags',
+      jiraStatus: 'In QA',
+      pipelineState: 'staging_queued',
+      repoOwner: 'acme',
+      repoName: 'widgets',
+    });
+    ctx.ticketsRepo.setGithubFacts('VIM-113', {
+      branchName: 'VIM-113',
+      prNumber: 174,
+      prState: 'open',
+    });
+    ctx.repoResolver.getClient = vi.fn(() => ({
+      compareCommits: vi.fn().mockResolvedValue({ aheadBy: 1, behindBy: 0 }),
+      getPr: vi.fn().mockResolvedValue({
+        number: 174,
+        state: 'open',
+        author: 'jibingeorge',
+        mergeableState: 'blocked',
+        base: 'develop',
+        head: 'VIM-113',
+      }),
+      getMe: vi.fn().mockResolvedValue({ login: 'jibingeorge' }),
+    }));
+    const app = createApp(ctx);
+
+    const res = await request(app).get('/api/tickets/VIM-113');
+    expect(res.status).toBe(200);
+    expect(res.body.prAuthor).toBe('jibingeorge');
+    expect(res.body.githubLogin).toBe('jibingeorge');
+    expect(res.body.mergeBlockedForAuthor).toBe(true);
+  });
+
+  it('GET /api/tickets/:key allows merge when the token is not the PR author', async () => {
+    const ctx = buildTestCtx();
+    ctx.reposRepo.add('acme', 'widgets');
+    ctx.ticketsRepo.upsert({
+      key: 'PROJ-1',
+      summary: 'Fix',
+      jiraStatus: 'In QA',
+      pipelineState: 'staging_queued',
+      repoOwner: 'acme',
+      repoName: 'widgets',
+    });
+    ctx.ticketsRepo.setGithubFacts('PROJ-1', { branchName: 'feat/x', prNumber: 9, prState: 'open' });
+    ctx.repoResolver.getClient = vi.fn(() => ({
+      compareCommits: vi.fn().mockResolvedValue({ aheadBy: 1, behindBy: 0 }),
+      getPr: vi.fn().mockResolvedValue({
+        number: 9,
+        state: 'open',
+        author: 'developer',
+        mergeableState: 'blocked',
+        base: 'staging',
+        head: 'feat/x',
+      }),
+      getMe: vi.fn().mockResolvedValue({ login: 'qa-bot' }),
+    }));
+    const app = createApp(ctx);
+
+    const res = await request(app).get('/api/tickets/PROJ-1');
+    expect(res.body.mergeBlockedForAuthor).toBe(false);
+  });
+
   it('404s for an unknown ticket key', async () => {
     const ctx = buildTestCtx();
     const app = createApp(ctx);

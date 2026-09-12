@@ -121,6 +121,39 @@ function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller,
       body.aheadOfStaging = 0;
       body.aheadOfProduction = 0;
     }
+
+    // When a PR is open, surface whether the Stage2Prod GitHub token is the
+    // PR author. Authors cannot approve their own PR, so protected branches
+    // with required reviews will never merge for them — grey out Merge in the UI.
+    body.prAuthor = null;
+    body.prMergeableState = null;
+    body.githubLogin = null;
+    body.mergeBlockedForAuthor = false;
+    if (row.pr_number && row.repo_owner && (row.pr_state === 'open' || row.pipeline_state === 'staging_queued' || row.pipeline_state === 'queued' || row.pipeline_state === 'conflict')) {
+      const github = repoResolver.getClient(row.repo_owner, row.repo_name);
+      if (typeof github.getPr === 'function') {
+        try {
+          const [pr, me] = await Promise.all([
+            github.getPr(row.pr_number),
+            typeof github.getMe === 'function' ? github.getMe().catch(() => null) : Promise.resolve(null),
+          ]);
+          body.prAuthor = pr?.author ?? null;
+          body.prMergeableState = pr?.mergeableState ?? null;
+          body.githubLogin = me?.login ?? null;
+          const sameAuthor =
+            body.prAuthor
+            && body.githubLogin
+            && body.prAuthor.toLowerCase() === body.githubLogin.toLowerCase();
+          // Block when the token is the author. Required-review protection
+          // makes self-merge impossible; even without it the product expects
+          // a non-author (e.g. QA) to click Merge.
+          body.mergeBlockedForAuthor = Boolean(sameAuthor);
+        } catch {
+          // Leave merge affordances optimistic if GitHub is unreachable.
+        }
+      }
+    }
+
     return res.json(body);
   });
 

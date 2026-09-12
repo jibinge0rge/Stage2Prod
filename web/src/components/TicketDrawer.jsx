@@ -301,9 +301,16 @@ export default function TicketDrawer({ ticketKey, onClose }) {
   const canOpenStagingPr =
     hasBranch && (state === 'unmerged' || state === 'rejected') && hasStagingChanges;
   const canOpenProductionPr = hasBranch && state === 'staging' && hasProductionChanges;
+  const mergeBlockedForAuthor = Boolean(ticket.mergeBlockedForAuthor);
+  const mergeDisabled = merging || closing || mergeBlockedForAuthor;
+  const mergeBlockedTitle = mergeBlockedForAuthor
+    ? `You opened PR #${ticket.prNumber} as ${ticket.prAuthor}. Branch protection requires another reviewer — ask a teammate to approve and merge.`
+    : undefined;
   let stagingPrHint = `Opens a pull request. Merge it onto ${stagingLabel} when you're ready — that moves Jira to In QA.`;
   if (!hasBranch) stagingPrHint = 'Create a branch first, or link an existing PR if its name does not include this ticket key.';
-  else if (stagingPrOpen) stagingPrHint = `PR already open into ${stagingLabel}. Merge (QA can approve+merge if they didn't open it), or close it to go back.`;
+  else if (stagingPrOpen && mergeBlockedForAuthor) {
+    stagingPrHint = `PR #${ticket.prNumber} is open into ${stagingLabel}, but you're the author and the branch is protected — ask someone else to approve and merge.`;
+  } else if (stagingPrOpen) stagingPrHint = `PR already open into ${stagingLabel}. Merge (QA can approve+merge if they didn't open it), or close it to go back.`;
   else if (onOrPastStaging) stagingPrHint = `Already on ${stagingLabel}.`;
   else if (!hasStagingChanges) {
     stagingPrHint = `No changes compared to ${stagingLabel} yet — push commits to this branch first.`;
@@ -312,6 +319,8 @@ export default function TicketDrawer({ ticketKey, onClose }) {
   let productionPrHint = `After QA, open a PR into ${productionLabel}, then merge it. Merging marks the ticket Done in Jira.`;
   if (!onOrPastStaging && !productionPrOpen) {
     productionPrHint = `Send this to ${stagingLabel} and get QA approval first.`;
+  } else if (productionPrOpen && mergeBlockedForAuthor) {
+    productionPrHint = `PR #${ticket.prNumber} is open into ${productionLabel}, but you're the author and the branch is protected — ask someone else to approve and merge.`;
   } else if (productionPrOpen) {
     productionPrHint = `PR already open into ${productionLabel}. Merge to ship (approves first if you're not the author), or close it to stay on ${stagingLabel}.`;
   } else if (onOrPastProduction) {
@@ -482,7 +491,13 @@ export default function TicketDrawer({ ticketKey, onClose }) {
               )}
               {stagingPrOpen && (
                 <>
-                  <button type="button" className="btn btn-primary" onClick={handleMerge} disabled={merging || closing}>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={handleMerge}
+                    disabled={mergeDisabled}
+                    title={mergeBlockedTitle}
+                  >
                     {merging ? 'Merging…' : `Merge PR into ${stagingLabel}`}
                   </button>
                   <button type="button" className="btn btn-danger-outline" onClick={handleClosePr} disabled={closing || merging}>
@@ -517,7 +532,13 @@ export default function TicketDrawer({ ticketKey, onClose }) {
               )}
               {productionPrOpen && (
                 <>
-                  <button type="button" className="btn btn-primary" onClick={handleMerge} disabled={merging || closing}>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={handleMerge}
+                    disabled={mergeDisabled}
+                    title={mergeBlockedTitle}
+                  >
                     {merging ? 'Merging…' : `Merge PR into ${productionLabel}`}
                   </button>
                   <button type="button" className="btn btn-danger-outline" onClick={handleClosePr} disabled={closing || merging}>
@@ -530,7 +551,13 @@ export default function TicketDrawer({ ticketKey, onClose }) {
 
           {state === 'conflict' && !stagingPrOpen && !productionPrOpen && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <button type="button" className="btn btn-primary" onClick={handleMerge} disabled={merging || closing}>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={handleMerge}
+                disabled={mergeDisabled}
+                title={mergeBlockedTitle}
+              >
                 {merging ? 'Merging…' : 'Retry merge'}
               </button>
               {ticket.prNumber ? (
@@ -538,6 +565,11 @@ export default function TicketDrawer({ ticketKey, onClose }) {
                   {closing ? 'Closing…' : 'Close PR'}
                 </button>
               ) : null}
+            </div>
+          )}
+          {mergeBlockedForAuthor && (
+            <div style={{ fontSize: 11, color: 'var(--warning)' }}>
+              Merge is disabled for you — you authored this PR and GitHub branch protection needs another reviewer.
             </div>
           )}
           {prError && <div style={{ fontSize: 11, color: 'var(--danger)' }}>{prError}</div>}
