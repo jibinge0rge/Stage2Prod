@@ -1,0 +1,310 @@
+.pathway {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.pathwayHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--n-hairline);
+  flex-wrap: wrap;
+}
+
+.pathwayTitle {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--n-strongest);
+}
+
+.repoName {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--n-muted);
+}
+
+.driftPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: var(--r-button);
+  background: var(--n-fill-subtle);
+  border: 1px solid var(--n-border);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--n-body);
+  white-space: nowrap;
+}
+
+.driftPillBehind {
+  background: var(--warning-fill);
+  border-color: var(--n-border-strong);
+  color: var(--warning);
+}
+
+.driftPillSync {
+  color: var(--success-text);
+}
+
+.lanes {
+  display: grid;
+  grid-template-columns:
+    minmax(0, 1fr)
+    minmax(0, 0.55fr)
+    minmax(0, 1.15fr)
+    minmax(0, 0.55fr)
+    minmax(0, 1fr);
+  align-items: stretch;
+  min-height: 180px;
+  min-width: 0;
+}
+
+.lane {
+  padding: 14px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  position: relative;
+  overflow: hidden;
+}
+
+.lane + .lane {
+  border-left: 1px solid var(--n-hairline);
+}
+
+.airgap {
+  padding: 12px 8px;
+  background: var(--n-app-bg);
+  border-left: 1px dashed var(--n-border-strong);
+  border-right: 1px dashed var(--n-border-strong);
+}
+
+.airgap + .lane,
+.lane + .airgap {
+  border-left: none;
+}
+
+.airgapHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 2px;
+}
+
+.airgapTitle {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--n-muted);
+  text-align: center;
+  line-height: 1.3;
+}
+
+.airgapCount {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--n-body);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.laneHeader {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.laneTitle {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--n-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.laneBranch {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--n-strongest);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.flowHint {
+  font-size: 10px;
+  color: var(--n-muted);
+  font-style: italic;
+}
+
+.ticketList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.empty {
+  font-size: 11px;
+  color: var(--n-muted);
+  padding: 4px 0;
+}
+
+.emptyCenter {
+  text-align: center;
+  font-size: 10px;
+  color: var(--n-muted);
+  padding: 8px 2px;
+}
+
+.ticketCard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--n-border);
+  border-radius: var(--r-card);
+  background: var(--n-surface);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  appearance: none;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.ticketCard:focus,
+.ticketCard:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: -2px;
+}
+
+.ticketCardCompact {
+  padding: 7px 8px;
+  gap: 4px;
+  border-style: dashed;
+  background: transparent;
+}
+
+.ticketCard:hover {
+  background: var(--hover-overlay);
+}
+
+.ticketCardTop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ticketKey {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--n-strongest);
+}
+
+.ticketSummary {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--n-body);
+}
+
+.ticketCardBottom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.badgeWrap {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.badgeWrap :global(.badge) {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+  line-height: 20px;
+}
+
+.ticketStatus {
+  font-size: 10px;
+  color: var(--n-muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assignee {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  min-width: 0;
+  max-width: 40%;
+}
+
+.assigneeName {
+  font-size: 10px;
+  color: var(--n-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.avatar {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--n-fill-subtle);
+}
+
+.untrackedLink {
+  display: block;
+  font-size: 11px;
+  color: var(--warning);
+}
+
+@media (max-width: 960px) {
+  .lanes {
+    grid-template-columns: 1fr;
+  }
+
+  .lane + .lane,
+  .airgap {
+    border-left: none;
+    border-right: none;
+    border-top: 1px solid var(--n-hairline);
+  }
+
+  .airgap {
+    border-top-style: dashed;
+    border-bottom: 1px dashed var(--n-border-strong);
+  }
+}

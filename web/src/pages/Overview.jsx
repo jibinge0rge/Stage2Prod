@@ -3,7 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useApi } from '../lib/api';
 import { useRegisterRefresh } from '../lib/useRegisterRefresh';
 import { useRepoFilter, repoKey, ALL_REPOS } from '../context/RepoFilterContext';
-import KpiTile from '../components/KpiTile';
+import OverviewKpiStrip from '../components/OverviewKpiStrip';
 import ConflictBanner from '../components/ConflictBanner';
 import BranchBoard from '../components/BranchBoard';
 import { RecentEventsList } from '../components/EventTable';
@@ -24,6 +24,11 @@ function withRepoParam(path, selectedRepoKey) {
 
 function eventRepoKey(e) {
   return e.repo ? `${e.repo.owner}/${e.repo.name}` : null;
+}
+
+function ticketBelongsToRepo(ticket, repo) {
+  if (!ticket?.repo || !repo) return false;
+  return ticket.repo.owner === repo.owner && ticket.repo.name === repo.name;
 }
 
 /** Per repo, the timestamp (ms) of today's most recent staging reset, if any. */
@@ -97,31 +102,43 @@ export default function Overview() {
     (untrackedData?.repos ?? []).map((u) => [repoKey(u.repo), u.stagingCommits?.length ?? 0])
   );
 
+  const kpiItems = [
+    {
+      label: 'Dev',
+      value: inProgress.length,
+      onClick: () => navigate('/pipeline?filter=in_progress'),
+    },
+    {
+      label: 'Staging',
+      value: onStaging.length,
+      onClick: () => navigate('/pipeline?filter=staging'),
+    },
+    {
+      label: 'Awaiting prod',
+      value: awaitingDevelop.length,
+      onClick: () => navigate('/pipeline?filter=queued'),
+    },
+    {
+      label: 'Conflicts',
+      value: conflicts.length,
+      valueColor: conflicts.length ? 'var(--danger)' : undefined,
+      onClick: () => navigate('/pipeline?filter=conflict'),
+    },
+    {
+      label: 'Merged',
+      value: mergedTodayTotal,
+      valueColor: 'var(--success-text)',
+      onClick: () => navigate('/log'),
+    },
+  ];
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <ConflictBanner tickets={conflicts} />
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(160px,1fr))', gap: 12 }}>
-        <KpiTile
-          label="In progress"
-          value={inProgress.length}
-          caption="under development, not yet on staging"
-          onClick={() => navigate('/pipeline?filter=in_progress')}
-        />
-        <KpiTile label="On staging" value={onStaging.length} caption="tickets awaiting QA validation" />
-        <KpiTile label="Awaiting production" value={awaitingDevelop.length} caption="QA passed, PR ready to merge" />
-        <KpiTile
-          label="Conflicts"
-          value={conflicts.length}
-          caption="blocked, needs local resolution"
-          valueColor={conflicts.length ? 'var(--danger)' : undefined}
-        />
-        <KpiTile
-          label="Merged today"
-          value={mergedTodayTotal}
-          caption={`${mergedToDevelop} to production, ${mergedToStaging} to staging`}
-          valueColor="var(--success-text)"
-        />
+      <OverviewKpiStrip items={kpiItems} />
+      <div style={{ fontSize: 11, color: 'var(--n-muted)', marginTop: -6 }}>
+        {mergedToDevelop} to production, {mergedToStaging} to staging today
       </div>
 
       {allRepoEntries.length === 0 ? (
@@ -132,7 +149,7 @@ export default function Overview() {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: repoEntries.length === 1 ? '1fr' : 'repeat(auto-fit,minmax(340px,1fr))',
+            gridTemplateColumns: repoEntries.length === 1 ? '1fr' : 'repeat(auto-fit,minmax(900px,1fr))',
             gap: 12,
             alignItems: 'start',
           }}
@@ -142,6 +159,7 @@ export default function Overview() {
               key={`${entry.repo.owner}/${entry.repo.name}`}
               entry={entry}
               untrackedStagingCount={untrackedByRepo.get(repoKey(entry.repo)) ?? 0}
+              inDevTickets={inProgress.filter((t) => ticketBelongsToRepo(t, entry.repo))}
             />
           ))}
         </div>
