@@ -173,6 +173,44 @@ describe('PATCH /api/repos/:owner/:name', () => {
     expect(res.body.repo.effectiveStatusHandlerMap.in_progress.jiraStatus).toBe('Doing');
   });
 
+  it('saves DE/QA/DA team roles per repo', async () => {
+    const ctx = buildTestCtx();
+    ctx.reposRepo.add('acme', 'widgets', { jiraProjectKey: 'VIM' });
+    const app = createApp(ctx);
+
+    const res = await request(app)
+      .patch('/api/repos/acme/widgets')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send({
+        teamRoles: {
+          de: [{ accountId: 'a1', displayName: 'Ada', avatarUrl: 'https://x/a.png' }],
+          qa: [{ accountId: 'q1', displayName: 'Quinn' }],
+          da: [],
+        },
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.repo.teamRoles).toEqual({
+      de: [{ accountId: 'a1', displayName: 'Ada', avatarUrl: 'https://x/a.png' }],
+      qa: [{ accountId: 'q1', displayName: 'Quinn', avatarUrl: null }],
+      da: [],
+    });
+    expect(ctx.reposRepo.get('acme', 'widgets').teamRoles.de[0].displayName).toBe('Ada');
+  });
+
+  it('400s on unknown team role keys', async () => {
+    const ctx = buildTestCtx();
+    ctx.reposRepo.add('acme', 'widgets');
+    const app = createApp(ctx);
+
+    const res = await request(app)
+      .patch('/api/repos/acme/widgets')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send({ teamRoles: { pm: [] } });
+
+    expect(res.status).toBe(400);
+  });
+
   it('persists Also match aliases on the status map', async () => {
     const ctx = buildTestCtx();
     ctx.reposRepo.add('acme', 'widgets');

@@ -125,4 +125,39 @@ describe('JiraClient', () => {
     const result = await client.transition('PROJ-5', 'Needs Attention');
     expect(result).toEqual({ transitioned: false, reason: 'transition-not-available' });
   });
+
+  describe('searchUsers', () => {
+    it('uses assignable search when a project key is provided', async () => {
+      nock(BASE)
+        .get('/rest/api/3/user/assignable/search')
+        .query({ query: 'ada', maxResults: '20', project: 'VIM' })
+        .reply(200, [
+          {
+            accountId: 'a1',
+            displayName: 'Ada',
+            active: true,
+            accountType: 'atlassian',
+            avatarUrls: { '48x48': 'https://x/a.png' },
+          },
+          { accountId: 'bot', displayName: 'Bot', active: true, accountType: 'app' },
+        ]);
+
+      const users = await client.searchUsers({ query: 'ada', projectKey: 'VIM' });
+      expect(users).toEqual([
+        { accountId: 'a1', displayName: 'Ada', avatarUrl: 'https://x/a.png', emailAddress: null },
+      ]);
+    });
+
+    it('falls back to global user search without a project', async () => {
+      nock(BASE)
+        .get('/rest/api/3/user/search')
+        .query({ query: 'bob', maxResults: '20' })
+        .reply(200, [{ accountId: 'b1', displayName: 'Bob', active: true, accountType: 'atlassian' }]);
+
+      const users = await client.searchUsers({ query: 'bob' });
+      expect(users).toEqual([
+        { accountId: 'b1', displayName: 'Bob', avatarUrl: null, emailAddress: null },
+      ]);
+    });
+  });
 });

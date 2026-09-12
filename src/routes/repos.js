@@ -8,6 +8,7 @@ const {
   defaultStatusMap,
   normalizeStatusMap,
 } = require('../lib/statusHandlerMap');
+const { TEAM_ROLE_IDS, TEAM_ROLE_META, normalizeTeamRoles } = require('../lib/teamRoles');
 const { randomUUID } = require('crypto');
 
 function validateStatusMapInput(input) {
@@ -30,7 +31,17 @@ function validateStatusMapInput(input) {
   return normalizeStatusMap(input);
 }
 
-function createReposRouter({ config, reposRepo, ticketsRepo, eventsRepo, repoResolver, logger }) {
+function validateTeamRolesInput(input) {
+  if (input === undefined) return undefined;
+  try {
+    return normalizeTeamRoles(input);
+  } catch (err) {
+    err.status = err.status || 400;
+    throw err;
+  }
+}
+
+function createReposRouter({ config, reposRepo, ticketsRepo, eventsRepo, repoResolver, jira, logger }) {
   const router = express.Router();
   const log = logger || console;
 
@@ -45,8 +56,30 @@ function createReposRouter({ config, reposRepo, ticketsRepo, eventsRepo, repoRes
     });
   });
 
+  router.get('/team-roles', (req, res) => {
+    res.json({
+      roles: TEAM_ROLE_IDS.map((id) => TEAM_ROLE_META[id]),
+    });
+  });
+
+  // People picker for repo team roles — discloses Jira directory users, so
+  // gated like GitHub repo enumeration.
+  router.get('/jira/users', requireApiToken, async (req, res, next) => {
+    try {
+      if (!jira || typeof jira.searchUsers !== 'function') {
+        return res.status(503).json({ error: 'unavailable', message: 'Jira client is not configured' });
+      }
+      const query = String(req.query.q || req.query.query || '');
+      const projectKey = req.query.project ? String(req.query.project) : null;
+      const users = await jira.searchUsers({ query, projectKey, maxResults: 20 });
+      return res.json({ users });
+    } catch (err) {
+      return next(err);
+    }
+  });
+
   router.post('/repos', requireApiToken, async (req, res, next) => {
-    const { owner, name, jiraProjectKey, statusHandlerMap } = req.body || {};
+    const { owner, name, jiraProjectKey, statusHandlerMap, teamRoles } = req.body || {};
     let { productionBranch, stagingBranch } = req.body || {};
     if (!owner || !name) {
       return res.status(400).json({ error: 'bad_request', message: '"owner" and "name" are required' });
@@ -62,8 +95,10 @@ function createReposRouter({ config, reposRepo, ticketsRepo, eventsRepo, repoRes
         return res.status(400).json({ error: 'bad_request', message: 'productionBranch and stagingBranch must be different' });
       }
       let normalizedMap;
+      let normalizedTeamRoles;
       try {
         normalizedMap = validateStatusMapInput(statusHandlerMap);
+        normalizedTeamRoles = validateTeamRolesInput(teamRoles);
       } catch (err) {
         return res.status(err.status || 400).json({ error: 'bad_request', message: err.message });
       }
@@ -72,6 +107,7 @@ function createReposRouter({ config, reposRepo, ticketsRepo, eventsRepo, repoRes
         stagingBranch,
         jiraProjectKey,
         statusHandlerMap: normalizedMap,
+        teamRoles: normalizedTeamRoles,
       });
       return res.status(201).json({ repo });
     } catch (err) {
@@ -84,7 +120,7 @@ function createReposRouter({ config, reposRepo, ticketsRepo, eventsRepo, repoRes
     if (!reposRepo.isActive(owner, name)) {
       return res.status(404).json({ error: 'not_found', message: `${owner}/${name} is not a watched repo` });
     }
-    const { productionBranch, stagingBranch, jiraProjectKey, statusHandlerMap } = req.body || {};
+    const { productionBranch, stagingBranch, jiraProjectKey, statusHandlerMap, teamRoles } = req.body || {};
     const current = reposRepo.get(owner, name);
     const nextProduction = productionBranch || current.productionBranch;
     const nextStaging = stagingBranch || current.stagingBranch;
@@ -93,8 +129,10 @@ function createReposRouter({ config, reposRepo, ticketsRepo, eventsRepo, repoRes
     }
 
     let normalizedMap;
+    let normalizedTeamRoles;
     try {
       normalizedMap = validateStatusMapInput(statusHandlerMap);
+      normalizedTeamRoles = validateTeamRolesInput(teamRoles);
     } catch (err) {
       return res.status(err.status || 400).json({ error: 'bad_request', message: err.message });
     }
@@ -107,6 +145,7 @@ function createReposRouter({ config, reposRepo, ticketsRepo, eventsRepo, repoRes
       stagingBranch,
       jiraProjectKey,
       statusHandlerMap: normalizedMap,
+      teamRoles: normalizedTeamRoles,
     });
 
     let reclassified = [];

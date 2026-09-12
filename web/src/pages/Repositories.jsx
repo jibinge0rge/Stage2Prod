@@ -3,6 +3,7 @@ import { useApi, getJson, postJson, patchJson, deleteJson } from '../lib/api';
 import { useRegisterRefresh } from '../lib/useRegisterRefresh';
 import { useAppContext } from '../context/AppContext';
 import CustomSelect from '../components/CustomSelect';
+import RepoTeamRoles, { emptyTeamRoles } from '../components/RepoTeamRoles';
 
 const fieldWidth = { width: 150 };
 
@@ -96,11 +97,24 @@ function JiraProjectKeyInput({ value, onChange, title, style }) {
   );
 }
 
+function teamRolesSummary(teamRoles) {
+  const roles = teamRoles || emptyTeamRoles();
+  const parts = [
+    ['DE', roles.de?.length || 0],
+    ['QA', roles.qa?.length || 0],
+    ['DA', roles.da?.length || 0],
+  ]
+    .filter(([, n]) => n > 0)
+    .map(([label, n]) => `${label} ${n}`);
+  return parts.length ? parts.join(' · ') : null;
+}
+
 function WatchedRepoRow({ repo, onRemove, removing, onSaved, branchCache, setBranchCache, showToast }) {
   const [editing, setEditing] = useState(false);
   const [productionBranch, setProductionBranch] = useState(repo.productionBranch);
   const [stagingBranch, setStagingBranch] = useState(repo.stagingBranch);
   const [jiraProjectKey, setJiraProjectKey] = useState(repo.jiraProjectKey || '');
+  const [teamRoles, setTeamRoles] = useState(repo.teamRoles || emptyTeamRoles());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const { branches, loading, error: branchesError } = useRepoBranches(
@@ -111,6 +125,15 @@ function WatchedRepoRow({ repo, onRemove, removing, onSaved, branchCache, setBra
     editing
   );
 
+  useEffect(() => {
+    if (!editing) {
+      setProductionBranch(repo.productionBranch);
+      setStagingBranch(repo.stagingBranch);
+      setJiraProjectKey(repo.jiraProjectKey || '');
+      setTeamRoles(repo.teamRoles || emptyTeamRoles());
+    }
+  }, [repo, editing]);
+
   async function save() {
     if (productionBranch === stagingBranch) {
       setError('Production and staging branch names must be different.');
@@ -119,7 +142,12 @@ function WatchedRepoRow({ repo, onRemove, removing, onSaved, branchCache, setBra
     setSaving(true);
     setError(null);
     try {
-      const result = await patchJson(`/repos/${repo.owner}/${repo.name}`, { productionBranch, stagingBranch, jiraProjectKey });
+      const result = await patchJson(`/repos/${repo.owner}/${repo.name}`, {
+        productionBranch,
+        stagingBranch,
+        jiraProjectKey,
+        teamRoles,
+      });
       setEditing(false);
       const moved = result?.reclassified || [];
       if (moved.length && showToast) {
@@ -129,6 +157,8 @@ function WatchedRepoRow({ repo, onRemove, removing, onSaved, branchCache, setBra
         if (remapped) bits.push(`reclassified ${remapped}`);
         if (detached) bits.push(`detached ${detached} PR(s) that no longer match`);
         showToast(`Branch settings saved — ${bits.join(', ')}.`);
+      } else if (showToast) {
+        showToast('Repo settings saved.');
       }
       onSaved(result);
     } catch (err) {
@@ -137,6 +167,8 @@ function WatchedRepoRow({ repo, onRemove, removing, onSaved, branchCache, setBra
       setSaving(false);
     }
   }
+
+  const teamSummary = teamRolesSummary(repo.teamRoles);
 
   return (
     <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--n-hairline)' }}>
@@ -158,6 +190,11 @@ function WatchedRepoRow({ repo, onRemove, removing, onSaved, branchCache, setBra
                 no Jira project
               </span>
             )}
+            {teamSummary ? (
+              <span style={{ fontSize: 11, color: 'var(--n-muted)' }} title="Configured team roles">
+                {teamSummary}
+              </span>
+            ) : null}
           </>
         )}
         <span style={{ fontSize: 11, color: 'var(--n-muted)' }}>
@@ -173,49 +210,57 @@ function WatchedRepoRow({ repo, onRemove, removing, onSaved, branchCache, setBra
         </button>
       </div>
       {editing && (
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, marginTop: 10, flexWrap: 'wrap' }}>
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 10, color: 'var(--n-muted)' }}>
-            Production branch
-            <BranchSelect
-              branches={branches}
-              loading={loading}
-              error={branchesError}
-              value={productionBranch}
-              onChange={setProductionBranch}
-              title="Production branch"
-            />
-          </label>
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 10, color: 'var(--n-muted)' }}>
-            Staging branch
-            <BranchSelect
-              branches={branches}
-              loading={loading}
-              error={branchesError}
-              value={stagingBranch}
-              onChange={setStagingBranch}
-              title="Staging branch"
-            />
-          </label>
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 10, color: 'var(--n-muted)' }}>
-            Jira project key
-            <JiraProjectKeyInput value={jiraProjectKey} onChange={setJiraProjectKey} title="Jira project key" />
-          </label>
-          <button type="button" className="btn btn-primary" onClick={save} disabled={saving}>
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-          <button
-            type="button"
-            className="btn btn-plain"
-            onClick={() => {
-              setEditing(false);
-              setProductionBranch(repo.productionBranch);
-              setStagingBranch(repo.stagingBranch);
-              setJiraProjectKey(repo.jiraProjectKey || '');
-              setError(null);
-            }}
-          >
-            Cancel
-          </button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 10, color: 'var(--n-muted)' }}>
+              Production branch
+              <BranchSelect
+                branches={branches}
+                loading={loading}
+                error={branchesError}
+                value={productionBranch}
+                onChange={setProductionBranch}
+                title="Production branch"
+              />
+            </label>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 10, color: 'var(--n-muted)' }}>
+              Staging branch
+              <BranchSelect
+                branches={branches}
+                loading={loading}
+                error={branchesError}
+                value={stagingBranch}
+                onChange={setStagingBranch}
+                title="Staging branch"
+              />
+            </label>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 10, color: 'var(--n-muted)' }}>
+              Jira project key
+              <JiraProjectKeyInput value={jiraProjectKey} onChange={setJiraProjectKey} title="Jira project key" />
+            </label>
+            <button type="button" className="btn btn-primary" onClick={save} disabled={saving}>
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+            <button
+              type="button"
+              className="btn btn-plain"
+              onClick={() => {
+                setEditing(false);
+                setProductionBranch(repo.productionBranch);
+                setStagingBranch(repo.stagingBranch);
+                setJiraProjectKey(repo.jiraProjectKey || '');
+                setTeamRoles(repo.teamRoles || emptyTeamRoles());
+                setError(null);
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+          <RepoTeamRoles
+            value={teamRoles}
+            onChange={setTeamRoles}
+            projectKey={jiraProjectKey.trim() || null}
+          />
         </div>
       )}
       {error && <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 6 }}>{error}</div>}

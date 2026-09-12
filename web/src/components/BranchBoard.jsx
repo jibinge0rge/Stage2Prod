@@ -20,8 +20,8 @@ function shortSha(sha) {
 
 /** Short labels for narrow airgap cards — full names already live in the column title. */
 const COMPACT_BADGE_LABELS = {
-  staging_queued: 'Queued',
-  queued: 'Queued',
+  staging_queued: 'Awaiting merge',
+  queued: 'Awaiting merge',
   staging: 'On staging',
   develop: 'Merged',
   conflict: 'Conflict',

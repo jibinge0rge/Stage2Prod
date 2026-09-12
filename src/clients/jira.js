@@ -130,6 +130,39 @@ class JiraClient {
     return data.transitions || [];
   }
 
+  /**
+   * People picker source. Prefers project-assignable users when `projectKey`
+   * is set; otherwise falls back to global user search.
+   */
+  async searchUsers({ query = '', projectKey = null, maxResults = 20 } = {}) {
+    const q = String(query || '').trim();
+    const limit = Math.min(Math.max(Number(maxResults) || 20, 1), 50);
+    const params = new URLSearchParams({
+      query: q,
+      maxResults: String(limit),
+    });
+
+    let path;
+    if (projectKey) {
+      params.set('project', String(projectKey).trim());
+      path = `/rest/api/3/user/assignable/search?${params}`;
+    } else {
+      path = `/rest/api/3/user/search?${params}`;
+    }
+
+    const data = await this._withJiraBackoff(() => this._request('GET', path));
+    const users = Array.isArray(data) ? data : [];
+    return users
+      .filter((u) => u && u.accountId && u.active !== false)
+      .filter((u) => !u.accountType || u.accountType === 'atlassian')
+      .map((u) => ({
+        accountId: u.accountId,
+        displayName: u.displayName || u.accountId,
+        avatarUrl: u.avatarUrls?.['48x48'] || u.avatarUrls?.['32x32'] || null,
+        emailAddress: u.emailAddress || null,
+      }));
+  }
+
   // ---- writes ----
 
   async addComment(ticketKey, text) {
