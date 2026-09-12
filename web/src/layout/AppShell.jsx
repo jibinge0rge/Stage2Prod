@@ -8,6 +8,7 @@ import ResetModal from '../components/ResetModal';
 import Toast from '../components/Toast';
 import TicketDrawer from '../components/TicketDrawer';
 import ThemeToggle from '../components/ThemeToggle';
+import ServiceHealthDots from '../components/ServiceHealthDots';
 import RepoSelector from '../components/RepoSelector';
 import { useRepoFilter, repoKey, ALL_REPOS } from '../context/RepoFilterContext';
 import { initialsFromEmail } from '../lib/initialsFromEmail';
@@ -48,8 +49,6 @@ export default function AppShell() {
     return () => registerHealthRefresh(null);
   }, [refreshHealth, registerHealthRefresh]);
 
-  const heldLocks = health?.locks?.filter((l) => l.locked) ?? [];
-  const lockState = heldLocks.length ? `busy (${heldLocks.length})` : 'idle';
   const lastEventTs = eventsData?.events?.[0]?.timestamp;
   const watchedRepos = health?.watchedRepos ?? [];
   // Prefer the globally-selected repo's real branch names; with "All
@@ -76,10 +75,7 @@ export default function AppShell() {
           Automation active
         </span>
         <div className="spacer" />
-        <div className={styles.topbarMeta}>
-          <span>Git ref locks</span>
-          <strong>{lockState}</strong>
-        </div>
+        <ServiceHealthDots health={health} />
         <span className={styles.topbarDivider} />
         <div className={styles.lastEvent}>
           Last event <span style={{ color: 'var(--dark-value)' }}>{formatEventTime(lastEventTs)}</span>

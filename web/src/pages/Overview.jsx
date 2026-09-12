@@ -6,7 +6,6 @@ import { useRepoFilter, repoKey, ALL_REPOS } from '../context/RepoFilterContext'
 import KpiTile from '../components/KpiTile';
 import ConflictBanner from '../components/ConflictBanner';
 import BranchBoard from '../components/BranchBoard';
-import ServiceHealthList from '../components/ServiceHealthList';
 import { RecentEventsList } from '../components/EventTable';
 import { isUnderDevelopment } from '../lib/ticketFilters';
 import { countMergedToday } from '../lib/mergedToday';
@@ -42,7 +41,6 @@ function latestResetByRepo(resetEvents) {
 export default function Overview() {
   const navigate = useNavigate();
   const { selectedRepoKey } = useRepoFilter();
-  const { data: health, refresh: refreshHealth } = useApi('/health', { intervalMs: 15000 });
   const { data: ticketsData, refresh: refreshTickets } = useApi(withRepoParam('/tickets', selectedRepoKey), {
     intervalMs: 15000,
   });
@@ -67,14 +65,13 @@ export default function Overview() {
   );
 
   const refreshAll = useCallback(() => {
-    refreshHealth();
     refreshTickets();
     refreshBranches();
     refreshUntracked();
     refreshRecent();
     refreshMergedToday();
     refreshResetToday();
-  }, [refreshHealth, refreshTickets, refreshBranches, refreshUntracked, refreshRecent, refreshMergedToday, refreshResetToday]);
+  }, [refreshTickets, refreshBranches, refreshUntracked, refreshRecent, refreshMergedToday, refreshResetToday]);
   useRegisterRefresh(refreshAll);
 
   const tickets = ticketsData?.tickets ?? [];
@@ -147,7 +144,6 @@ export default function Overview() {
               untrackedStagingCount={untrackedByRepo.get(repoKey(entry.repo)) ?? 0}
             />
           ))}
-          <ServiceHealthList health={health} />
         </div>
       )}
 

@@ -1,0 +1,133 @@
+.wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  outline: none;
+}
+
+.dots {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  border: 1px solid var(--dark-divider);
+  border-radius: 44px;
+  cursor: default;
+}
+
+.dot {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--dark-muted);
+  border-radius: 50%;
+}
+
+.icon {
+  display: inline-flex;
+  opacity: 0.9;
+}
+
+.badge {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--status, var(--success));
+  box-shadow: 0 0 0 1.5px var(--dark-bar);
+}
+
+.panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 80;
+  width: min(320px, calc(100vw - 24px));
+  padding: 8px 0;
+  background: var(--n-surface);
+  border: 1px solid var(--n-border);
+  border-radius: var(--r-modal);
+  box-shadow: var(--shadow-popover);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-4px) scale(0.98);
+  transform-origin: top right;
+  transition: opacity 140ms var(--ease), transform 140ms var(--ease), visibility 140ms;
+  pointer-events: none;
+}
+
+.wrap:hover .panel,
+.wrap:focus-within .panel {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+.panelTitle {
+  padding: 4px 12px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--n-muted);
+}
+
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 12px;
+}
+
+.rowDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+
+.rowBody {
+  flex: 1;
+  min-width: 0;
+}
+
+.rowLabel {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--n-strongest);
+  line-height: 1.25;
+}
+
+.rowDetail {
+  font-size: 11px;
+  color: var(--n-muted);
+  line-height: 1.35;
+  margin-top: 1px;
+}
+
+.rowState {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel {
+    transition: opacity 140ms var(--ease), visibility 140ms;
+    transform: none;
+  }
+  .wrap:hover .panel,
+  .wrap:focus-within .panel {
+    transform: none;
+  }
+}
