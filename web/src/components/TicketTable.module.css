@@ -1,0 +1,44 @@
+.filterRow {
+  display: grid;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  background: var(--n-surface);
+  border-bottom: 1px solid var(--n-border);
+}
+
+.filterInput {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 24px;
+  padding: 0 7px;
+  border: 1px solid var(--n-border);
+  border-radius: var(--r-input);
+  background: var(--n-app-bg);
+  font-size: 11px;
+  color: var(--n-body);
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.filterInput::placeholder {
+  color: var(--n-muted);
+  opacity: 0.85;
+}
+
+.filterInput:focus {
+  outline: none;
+  border-color: var(--brand);
+  background: var(--n-surface);
+}
+
+.filterInputActive {
+  border-color: var(--brand-border-light);
+  background: var(--brand-fill-selected);
+}
+
+.filterSpacer {
+  min-width: 0;
+}

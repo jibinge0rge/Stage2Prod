@@ -8,6 +8,11 @@ import FilterChips from '../components/FilterChips';
 import TicketTable from '../components/TicketTable';
 import DownloadTicketsMenu from '../components/DownloadTicketsMenu';
 import { matchesTicketFilter, buildTicketFilters } from '../lib/ticketFilters';
+import {
+  EMPTY_COLUMN_FILTERS,
+  hasActiveColumnFilters,
+  matchesColumnFilters,
+} from '../lib/columnFilters';
 
 const PAGE_SIZE = 25;
 
@@ -15,6 +20,7 @@ export default function TicketPipeline() {
   const [searchParams, setSearchParams] = useSearchParams();
   const filter = searchParams.get('filter') || 'all';
   const [query, setQuery] = useState('');
+  const [columnFilters, setColumnFilters] = useState(EMPTY_COLUMN_FILTERS);
   const [page, setPage] = useState(0);
   const { selectedTicketKey, openTicket } = useAppContext();
   const { selectedRepoKey } = useRepoFilter();
@@ -51,6 +57,7 @@ export default function TicketPipeline() {
     const q = query.trim().toLowerCase();
     return allTickets.filter((t) => {
       if (!matchesTicketFilter(t, filter, statusHandlerMap)) return false;
+      if (!matchesColumnFilters(t, columnFilters)) return false;
       if (!q) return true;
       const repoLabel = t.repo ? `${t.repo.owner}/${t.repo.name}` : '';
       return (
@@ -61,12 +68,12 @@ export default function TicketPipeline() {
         repoLabel.toLowerCase().includes(q)
       );
     });
-  }, [allTickets, filter, query, statusHandlerMap]);
+  }, [allTickets, filter, query, columnFilters, statusHandlerMap]);
 
   // Reset to first page when the visible set changes.
   useEffect(() => {
     setPage(0);
-  }, [filter, query, selectedRepoKey]);
+  }, [filter, query, columnFilters, selectedRepoKey]);
 
   const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE) || 1);
   const safePage = Math.min(page, pageCount - 1);
@@ -104,6 +111,15 @@ export default function TicketPipeline() {
           onChange={(id) => setSearchParams(id === 'all' ? {} : { filter: id })}
         />
         <div className="spacer" />
+        {hasActiveColumnFilters(columnFilters) ? (
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => setColumnFilters(EMPTY_COLUMN_FILTERS)}
+          >
+            Clear column filters
+          </button>
+        ) : null}
         <div style={{ fontSize: 11, color: 'var(--n-muted)' }}>
           {rows.length} of {allTickets.length} tickets
         </div>
@@ -116,7 +132,13 @@ export default function TicketPipeline() {
         />
       </div>
 
-      <TicketTable tickets={pageRows} selectedKey={selectedTicketKey} onSelect={openTicket} />
+      <TicketTable
+        tickets={pageRows}
+        selectedKey={selectedTicketKey}
+        onSelect={openTicket}
+        columnFilters={columnFilters}
+        onColumnFiltersChange={setColumnFilters}
+      />
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: 'var(--n-muted)' }}>
         <span>

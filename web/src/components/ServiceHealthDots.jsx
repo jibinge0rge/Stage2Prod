@@ -106,7 +106,7 @@ const ICONS = {
   ),
 };
 
-/** Compact topbar health: status-colored icon dots; hover reveals full details. */
+/** Compact sidebar health: status-colored icon dots; hover reveals full details. */
 export default function ServiceHealthDots({ health }) {
   const items = buildItems(health);
   const worst = items.some((i) => i.state === 'ERROR')
@@ -122,6 +122,7 @@ export default function ServiceHealthDots({ health }) {
       aria-label="Service health"
       data-worst={worst}
     >
+      <div className={styles.title}>Service health</div>
       <div className={styles.dots}>
         {items.map((item) => (
           <span
@@ -137,7 +138,6 @@ export default function ServiceHealthDots({ health }) {
       </div>
 
       <div className={styles.panel} role="tooltip">
-        <div className={styles.panelTitle}>Service health</div>
         {items.map((item) => (
           <div key={item.id} className={styles.row}>
             <span className={styles.rowDot} style={{ background: item.color }} />

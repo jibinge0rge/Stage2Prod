@@ -73,8 +73,6 @@ export default function AppShell() {
           Automation active
         </span>
         <div className="spacer" />
-        <ServiceHealthDots health={health} />
-        <span className={styles.topbarDivider} />
         <div className={styles.lastEvent}>
           Last event <span style={{ color: 'var(--dark-value)' }}>{formatEventTime(lastEventTs)}</span>
         </div>
@@ -131,6 +129,9 @@ export default function AppShell() {
           </div>
 
           <div className={styles.sidebarSpacer} />
+          <div className={styles.sidebarHealth}>
+            <ServiceHealthDots health={health} />
+          </div>
           <div className={styles.legend}>
             <div className={styles.legendTitle}>Branch model</div>
             <div className={styles.legendRows}>

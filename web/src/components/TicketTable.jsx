@@ -1,7 +1,19 @@
 import { StateBadge } from './Badge';
 import { pipelineStyle, checkStatusColor } from '../lib/styleMaps';
+import { EMPTY_COLUMN_FILTERS } from '../lib/columnFilters';
+import styles from './TicketTable.module.css';
 
 const COLUMNS = '92px minmax(160px,1.3fr) minmax(120px,0.9fr) minmax(140px,1fr) minmax(150px,1.1fr) 128px 148px 66px 84px 74px';
+
+const FILTER_COLUMNS = [
+  { key: 'ticket', label: 'Ticket' },
+  { key: 'summary', label: 'Summary' },
+  { key: 'assignee', label: 'Assignee' },
+  { key: 'repo', label: 'Repo' },
+  { key: 'branch', label: 'Branch' },
+  { key: 'jiraStatus', label: 'Jira status' },
+  { key: 'pipelineState', label: 'Pipeline state' },
+];
 
 function AssigneeCell({ assignee }) {
   if (!assignee?.name) {
@@ -34,7 +46,35 @@ function relativeUpdated(iso) {
   return `${Math.round(seconds / 86400)}d ago`;
 }
 
-export default function TicketTable({ tickets, selectedKey, onSelect, rowHeight = 34 }) {
+function ColumnFilterInput({ value, label, onChange }) {
+  const active = Boolean(value?.trim());
+  return (
+    <input
+      type="search"
+      className={`${styles.filterInput}${active ? ` ${styles.filterInputActive}` : ''}`}
+      value={value || ''}
+      placeholder="Filter…"
+      aria-label={`Filter ${label}`}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  );
+}
+
+export default function TicketTable({
+  tickets,
+  selectedKey,
+  onSelect,
+  rowHeight = 34,
+  columnFilters = EMPTY_COLUMN_FILTERS,
+  onColumnFiltersChange,
+}) {
+  const showFilters = typeof onColumnFiltersChange === 'function';
+
+  const setFilter = (key, value) => {
+    onColumnFiltersChange({ ...columnFilters, [key]: value });
+  };
+
   return (
     <div className="card table-wrap">
       <div className="table-head-row" style={{ gridTemplateColumns: COLUMNS, minWidth: 1260 }}>
@@ -49,6 +89,21 @@ export default function TicketTable({ tickets, selectedKey, onSelect, rowHeight 
         <div>Checks</div>
         <div>Updated</div>
       </div>
+      {showFilters ? (
+        <div className={styles.filterRow} style={{ gridTemplateColumns: COLUMNS, minWidth: 1260 }}>
+          {FILTER_COLUMNS.map((col) => (
+            <ColumnFilterInput
+              key={col.key}
+              value={columnFilters[col.key]}
+              label={col.label}
+              onChange={(v) => setFilter(col.key, v)}
+            />
+          ))}
+          <div className={styles.filterSpacer} />
+          <div className={styles.filterSpacer} />
+          <div className={styles.filterSpacer} />
+        </div>
+      ) : null}
       {tickets.length === 0 ? (
         <div className="empty-state">No tickets match the current search/filter.</div>
       ) : (

@@ -195,6 +195,13 @@
 .sidebarSpacer {
   flex: 1;
 }
+.sidebarHealth {
+  margin: 8px 8px 0;
+  padding: 10px;
+  border: 1px solid var(--n-border);
+  border-radius: var(--r-card);
+  background: var(--n-app-bg);
+}
 .legend {
   margin: 8px;
   padding: 10px;

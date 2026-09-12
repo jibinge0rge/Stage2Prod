@@ -1,19 +1,23 @@
 .wrap {
   position: relative;
   display: flex;
-  align-items: center;
-  flex-shrink: 0;
+  flex-direction: column;
+  gap: 8px;
   outline: none;
+}
+
+.title {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--n-muted);
 }
 
 .dots {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 3px 6px;
-  border: 1px solid var(--dark-divider);
-  border-radius: 44px;
-  cursor: default;
 }
 
 .dot {
@@ -23,7 +27,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--dark-muted);
+  color: var(--n-muted);
   border-radius: 50%;
 }
 
@@ -40,13 +44,13 @@
   height: 6px;
   border-radius: 50%;
   background: var(--status, var(--success));
-  box-shadow: 0 0 0 1.5px var(--dark-bar);
+  box-shadow: 0 0 0 1.5px var(--n-app-bg);
 }
 
 .panel {
   position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
+  bottom: calc(100% + 8px);
+  left: 0;
   z-index: 80;
   width: min(320px, calc(100vw - 24px));
   padding: 8px 0;
@@ -56,8 +60,8 @@
   box-shadow: var(--shadow-popover);
   opacity: 0;
   visibility: hidden;
-  transform: translateY(-4px) scale(0.98);
-  transform-origin: top right;
+  transform: translateY(4px) scale(0.98);
+  transform-origin: bottom left;
   transition: opacity 140ms var(--ease), transform 140ms var(--ease), visibility 140ms;
   pointer-events: none;
 }
@@ -68,15 +72,6 @@
   visibility: visible;
   transform: translateY(0) scale(1);
   pointer-events: auto;
-}
-
-.panelTitle {
-  padding: 4px 12px 8px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--n-muted);
 }
 
 .row {
