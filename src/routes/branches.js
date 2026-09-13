@@ -1,6 +1,7 @@
 const express = require('express');
 const { countNonMergeCommits } = require('../lib/gitCommit');
 const { reconcileOpenPrBases } = require('../services/reclassifyRepoTickets');
+const { reconcileMergeConflicts } = require('../services/syncPrMergeability');
 
 function formatTime(iso) {
   if (!iso) return '';
@@ -36,6 +37,7 @@ async function branchesForRepo({ repo, ticketsRepo, reposRepo, github, repoResol
     .list()
     .filter((t) => t.repo_owner === owner && t.repo_name === name && t.pr_number);
   await reconcileOpenPrBases(linked, { ticketsRepo, reposRepo, repoResolver, log });
+  await reconcileMergeConflicts(linked, { ticketsRepo, reposRepo, repoResolver });
 
   const [stagingSha, productionSha] = await Promise.all([
     github.getRef(stagingBranch).catch(() => null),

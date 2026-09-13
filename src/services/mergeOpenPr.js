@@ -193,6 +193,20 @@ async function mergeOpenPr({ ticketKey, repoOwner, repoName, productionBranch, s
     throw err;
   }
 
+  if (pr.mergeable === false || pr.mergeableState === 'dirty') {
+    const comment = target === 'develop' ? JIRA_COMMENTS.DEVELOP_CONFLICT : JIRA_COMMENTS.STAGING_CONFLICT;
+    await recordConflict(
+      target,
+      `PR #${prNumber} is not mergeable into ${branchName} (mergeable_state=${pr.mergeableState ?? 'unknown'}) — resolve on GitHub, then retry.`,
+      comment
+    );
+    const conflictErr = new Error(
+      `PR #${prNumber} can't be merged cleanly. Resolve the conflict on GitHub, then click Merge here again.`
+    );
+    conflictErr.status = 409;
+    throw conflictErr;
+  }
+
   const lockKey = refKey(repoOwner, repoName, `refs/heads/${branchName}`);
 
   return lockManager.withLock(lockKey, `mergeOpenPr:${ticketKey}`, correlationId, async () => {
@@ -240,7 +254,7 @@ async function mergeOpenPr({ ticketKey, repoOwner, repoName, productionBranch, s
       }
       return { outcome: OUTCOMES.MERGED, target };
     } catch (err) {
-      if (err.status === 405 || err.status === 409) {
+      if (err.status === 405 || err.status === 409 || err.status === 422) {
         const comment = target === 'develop' ? JIRA_COMMENTS.DEVELOP_CONFLICT : JIRA_COMMENTS.STAGING_CONFLICT;
         await recordConflict(target, `GitHub refused to merge PR #${prNumber} into ${branchName} (${err.status}) — not mergeable.`, comment);
         const githubDetail = err.message ? ` GitHub: ${err.message}` : '';

@@ -24,7 +24,7 @@ const COMPACT_BADGE_LABELS = {
   queued: 'Awaiting merge',
   staging: 'On staging',
   develop: 'Merged',
-  conflict: 'Conflict',
+  conflict: 'Merge conflict',
   rejected: 'Rejected',
   unmerged: 'Open',
   held: 'Held',
@@ -135,15 +135,19 @@ export default function BranchBoard({ entry, untrackedStagingCount = 0, inDevTic
   const stagingSide = staging?.tickets ?? [];
   const developSide = develop?.tickets ?? [];
 
-  // Merged onto the branch (or still present after QA reject / conflict on staging).
+  // Merged onto the branch (QA reject still sits on staging until cleared).
   const onProduction = developSide.filter((t) => t.pipelineState === 'develop');
-  const onStaging = stagingSide.filter((t) =>
-    t.pipelineState === 'staging' || t.pipelineState === 'conflict' || t.pipelineState === 'rejected'
+  const onStaging = stagingSide.filter(
+    (t) => t.pipelineState === 'staging' || t.pipelineState === 'rejected'
   );
 
-  // Airgaps — queued for the next merge, not yet on the target branch.
-  const awaitingProduction = developSide.filter((t) => t.pipelineState === 'queued');
-  const awaitingStaging = stagingSide.filter((t) => t.pipelineState === 'staging_queued');
+  // Airgaps — open PR waiting to land, including merge conflicts.
+  const awaitingProduction = developSide.filter(
+    (t) => t.pipelineState === 'queued' || t.pipelineState === 'conflict'
+  );
+  const awaitingStaging = stagingSide.filter(
+    (t) => t.pipelineState === 'staging_queued' || t.pipelineState === 'conflict'
+  );
 
   // In Dev: feature work not yet in any merge/queue lane.
   const inDev = inDevTickets.filter((t) => !ON_PATHWAY.has(t.pipelineState));

@@ -116,7 +116,11 @@ async function createBranchFromProduction({
   ticketsRepo.setGithubFacts(ticketKey, { branchName: name, headSha: sha });
 
   if (created) {
-    await jira.addComment(ticketKey, JIRA_COMMENTS.BRANCH_CREATED(name, productionBranch));
+    try {
+      await jira.addComment(ticketKey, JIRA_COMMENTS.BRANCH_CREATED(name, productionBranch));
+    } catch (err) {
+      log?.warn?.({ ticketKey, err: err.message }, 'jira comment after branch create failed; continuing');
+    }
     const repoConfig = reposRepo.get(repo.owner, repo.name);
     await syncJiraStatus({
       jira,

@@ -96,6 +96,23 @@ describe('mergeOpenPr', () => {
     expect(deps.ticketsRepo.get('PROJ-1').pipeline_state).toBe(PIPELINE_STATES.STAGING);
   });
 
+  it('marks CONFLICT before calling merge when GitHub reports the PR is not mergeable (dirty)', async () => {
+    const deps = baseDeps({ pipelineState: PIPELINE_STATES.STAGING_QUEUED });
+    deps.github.getPr = vi.fn().mockResolvedValue({
+      number: 42,
+      state: 'open',
+      merged: false,
+      base: 'qa',
+      head: 'feat/PROJ-1-thing',
+      mergeable: false,
+      mergeableState: 'dirty',
+    });
+
+    await expect(mergeOpenPr(deps)).rejects.toMatchObject({ status: 409 });
+    expect(deps.github.mergePr).not.toHaveBeenCalled();
+    expect(deps.ticketsRepo.get('PROJ-1').pipeline_state).toBe(PIPELINE_STATES.CONFLICT);
+  });
+
   it('marks CONFLICT and comments on Jira when GitHub refuses the merge (405) with a genuine conflict', async () => {
     const deps = baseDeps({ pipelineState: PIPELINE_STATES.STAGING_QUEUED });
     const err = new Error('Pull Request is not mergeable');
@@ -144,6 +161,16 @@ describe('mergeOpenPr', () => {
     expect(result).toMatchObject({ outcome: 'MERGED', target: 'staging', alreadyMerged: true });
     expect(deps.github.mergePr).not.toHaveBeenCalled();
     expect(deps.ticketsRepo.get('PROJ-1').pipeline_state).toBe(PIPELINE_STATES.STAGING);
+  });
+
+  it('marks CONFLICT when GitHub merge returns 422', async () => {
+    const deps = baseDeps({ pipelineState: PIPELINE_STATES.STAGING_QUEUED });
+    const err = new Error('Merge conflict');
+    err.status = 422;
+    deps.github.mergePr = vi.fn().mockRejectedValue(err);
+
+    await expect(mergeOpenPr(deps)).rejects.toMatchObject({ status: 409 });
+    expect(deps.ticketsRepo.get('PROJ-1').pipeline_state).toBe(PIPELINE_STATES.CONFLICT);
   });
 
   it('propagates an unrelated GitHub error (e.g. 503) without marking conflict', async () => {

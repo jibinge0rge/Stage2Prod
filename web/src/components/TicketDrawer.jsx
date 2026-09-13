@@ -149,6 +149,7 @@ export default function TicketDrawer({ ticketKey, onClose }) {
   const [commentError, setCommentError] = useState(null);
   const [merging, setMerging] = useState(false);
   const [mergeError, setMergeError] = useState(null);
+  const [mergeWarning, setMergeWarning] = useState(null);
   const [branchName, setBranchName] = useState('');
   const [creatingBranch, setCreatingBranch] = useState(false);
   const [branchError, setBranchError] = useState(null);
@@ -241,8 +242,10 @@ export default function TicketDrawer({ ticketKey, onClose }) {
   async function handleMerge() {
     setMerging(true);
     setMergeError(null);
+    setMergeWarning(null);
     try {
-      await postJson(`/tickets/${ticketKey}/merge`, {});
+      const result = await postJson(`/tickets/${ticketKey}/merge`, {});
+      if (result?.jiraSyncWarning) setMergeWarning(result.jiraSyncWarning);
     } catch (err) {
       setMergeError(err.message);
     } finally {
@@ -575,6 +578,7 @@ export default function TicketDrawer({ ticketKey, onClose }) {
           {prError && <div style={{ fontSize: 11, color: 'var(--danger)' }}>{prError}</div>}
           {closeError && <div style={{ fontSize: 11, color: 'var(--danger)' }}>{closeError}</div>}
           {mergeError && <div style={{ fontSize: 11, color: 'var(--danger)' }}>{mergeError}</div>}
+          {mergeWarning && <div style={{ fontSize: 11, color: 'var(--warning)' }}>{mergeWarning}</div>}
         </div>
 
         <div style={{ border: '1px solid var(--n-border)', borderRadius: 'var(--r-card)', padding: 11, display: 'flex', flexDirection: 'column', gap: 10 }}>

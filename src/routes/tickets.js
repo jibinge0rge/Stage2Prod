@@ -8,6 +8,7 @@ const { closeTicketPr, CloseNotReadyError } = require('../services/closeTicketPr
 const { compareBranchToTargets } = require('../services/branchDiff');
 const { linkTicketPr, listLinkablePulls, LinkNotReadyError } = require('../services/linkTicketPr');
 const { reconcileOpenPrBases } = require('../services/reclassifyRepoTickets');
+const { syncPipelineWithPrMergeability, reconcileMergeConflicts } = require('../services/syncPrMergeability');
 
 function rowToApi(row, reposRepo) {
   let repo = null;
@@ -68,6 +69,7 @@ function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller,
       // (e.g. release → develop) is fixed even when the UI is filtered to
       // the old "Awaiting production" bucket.
       await reconcileOpenPrBases(rows, { ticketsRepo, reposRepo, repoResolver, log: logger });
+      await reconcileMergeConflicts(rows, { ticketsRepo, reposRepo, repoResolver });
       if (state && state !== 'all') rows = rows.filter((r) => r.pipeline_state === state);
       if (q) {
         const needle = String(q).toLowerCase();
@@ -146,6 +148,11 @@ function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller,
             && body.githubLogin
             && body.prAuthor.toLowerCase() === body.githubLogin.toLowerCase();
           body.mergeBlockedForAuthor = Boolean(sameAuthor && body.prMergeableState === 'blocked');
+          body.pipelineState = await syncPipelineWithPrMergeability(row, {
+            ticketsRepo,
+            reposRepo,
+            github,
+          });
         } catch {
           // Leave merge affordances optimistic if GitHub is unreachable.
         }
@@ -388,7 +395,12 @@ function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller,
         return res.status(400).json({ error: 'bad_request', message: err.message });
       }
       if (err.status === 409) {
-        return res.status(409).json({ error: 'conflict', message: err.message });
+        const updated = ticketsRepo.get(key);
+        return res.status(409).json({
+          error: 'conflict',
+          message: err.message,
+          ticket: rowToApi(updated, reposRepo),
+        });
       }
       return next(err);
     }
