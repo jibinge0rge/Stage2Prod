@@ -1,6 +1,6 @@
 const { OUTCOMES, PIPELINE_STATES, JIRA_COMMENTS } = require('../lib/constants');
 const { syncJiraStatus } = require('../lib/syncJiraStatus');
-const { jiraStatusForStage } = require('../lib/statusHandlerMap');
+const { jiraStatusForStage, namesForStage } = require('../lib/statusHandlerMap');
 
 const SKIP_STATES = new Set([PIPELINE_STATES.DEVELOP]);
 
@@ -53,7 +53,9 @@ async function reconcileGoneBranch({
   const ticketKey = row.ticket_key;
   const goneBranch = row.branch_name;
   const repoConfig = reposRepo?.get?.(row.repo_owner, row.repo_name);
-  const openStatus = jiraStatusForStage('open', repoConfig?.effectiveStatusHandlerMap || repoConfig?.statusHandlerMap);
+  const statusMap = repoConfig?.effectiveStatusHandlerMap || repoConfig?.statusHandlerMap;
+  const openNames = namesForStage('open', statusMap);
+  const openStatus = openNames[0] || jiraStatusForStage('open', statusMap);
 
   ticketsRepo.clearFeatureWork(ticketKey);
 
@@ -80,6 +82,7 @@ async function reconcileGoneBranch({
     ticketsRepo,
     ticketKey,
     status: openStatus,
+    statusNames: openNames,
     log,
   });
 

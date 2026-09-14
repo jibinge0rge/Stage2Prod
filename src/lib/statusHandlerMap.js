@@ -141,6 +141,15 @@ function jiraStatusForStage(stageId, map) {
   return resolved[stageId]?.jiraStatus || defaultStatusMap()[stageId]?.jiraStatus || null;
 }
 
+/** Primary Jira name plus aliases for a stage, in preference order. */
+function namesForStage(stageId, map) {
+  const resolved = effectiveStatusMap(map);
+  const entry = resolved[stageId] || defaultStatusMap()[stageId];
+  if (!entry) return [];
+  if (Array.isArray(entry.match) && entry.match.length) return [...entry.match];
+  return entry.jiraStatus ? [entry.jiraStatus] : [];
+}
+
 function stageForJiraStatus(status, map) {
   if (!status) return null;
   const needle = String(status).trim().toLowerCase();
@@ -174,6 +183,7 @@ module.exports = {
   normalizeStatusMap,
   effectiveStatusMap,
   jiraStatusForStage,
+  namesForStage,
   stageForJiraStatus,
   handlerForStatus,
   defaultStatusHandlerMap,

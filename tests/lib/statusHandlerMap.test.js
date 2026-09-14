@@ -5,6 +5,7 @@ const {
   handlerForStatus,
   stageForJiraStatus,
   jiraStatusForStage,
+  namesForStage,
 } = require('../../src/lib/statusHandlerMap');
 
 describe('statusHandlerMap (lifecycle stages)', () => {
@@ -54,5 +55,9 @@ describe('statusHandlerMap (lifecycle stages)', () => {
     const effective = effectiveStatusMap({ in_qa: { jiraStatus: 'QA' } });
     expect(effective.in_qa.jiraStatus).toBe('QA');
     expect(effective.open.jiraStatus).toBe('Open');
+  });
+
+  it('namesForStage returns Open aliases including To Do', () => {
+    expect(namesForStage('open')).toEqual(['Open', 'To Do', 'Todo', 'Backlog']);
   });
 });

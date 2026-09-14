@@ -185,14 +185,15 @@ describe('GET /api/tickets', () => {
     ctx.repoResolver.getClient = vi.fn(() => ({
       getRef: vi.fn().mockRejectedValue(err),
     }));
+    ctx.jira.getTransitions = vi.fn().mockResolvedValue([{ id: '21', name: 'Reopen', to: { name: 'To Do' } }]);
     const app = createApp(ctx);
 
     const res = await request(app).get('/api/tickets/PROJ-1');
     expect(res.status).toBe(200);
     expect(res.body.branch).toBeNull();
     expect(res.body.pipelineState).toBe('unmerged');
-    expect(res.body.jiraStatus).toBe('Open');
-    expect(ctx.jira.tryTransition).toHaveBeenCalledWith('PROJ-1', 'Open');
+    expect(res.body.jiraStatus).toBe('To Do');
+    expect(ctx.jira.tryTransition).toHaveBeenCalledWith('PROJ-1', 'Reopen');
     expect(ctx.ticketsRepo.get('PROJ-1').branch_name).toBeNull();
   });
 

@@ -26,12 +26,15 @@ function setup({ pipelineState = PIPELINE_STATES.UNMERGED, withPr = false } = {}
 }
 
 describe('reconcileGoneBranch', () => {
-  it('clears the stale branch and moves Jira to Open when the feature branch is gone', async () => {
+  it('clears the stale branch and moves Jira to To Do when Open is not in the workflow', async () => {
     const { ticketsRepo, eventsRepo, reposRepo } = setup();
     const github = { getRef: vi.fn().mockRejectedValue(notFound()) };
     const jira = {
       addComment: vi.fn().mockResolvedValue({ commented: true }),
-      tryTransition: vi.fn().mockResolvedValue({ transitioned: true }),
+      tryTransition: vi.fn().mockImplementation(async (_key, name) => {
+        if (name === 'To Do') return { transitioned: true };
+        return { transitioned: false, reason: 'transition-not-available' };
+      }),
     };
 
     const reset = await reconcileGoneBranch({
@@ -48,8 +51,8 @@ describe('reconcileGoneBranch', () => {
     const row = ticketsRepo.get('PROJ-1');
     expect(row.branch_name).toBeNull();
     expect(row.pipeline_state).toBe(PIPELINE_STATES.UNMERGED);
-    expect(row.jira_status).toBe('Open');
-    expect(jira.tryTransition).toHaveBeenCalledWith('PROJ-1', 'Open');
+    expect(row.jira_status).toBe('To Do');
+    expect(jira.tryTransition).toHaveBeenCalledWith('PROJ-1', 'To Do');
     expect(jira.addComment).toHaveBeenCalledWith('PROJ-1', expect.stringContaining('feat/PROJ-1-thing'));
     const { events } = eventsRepo.list({ ticketKey: 'PROJ-1' });
     expect(events[0]).toMatchObject({

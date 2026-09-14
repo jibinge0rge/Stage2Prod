@@ -182,7 +182,9 @@ class JiraClient {
     const transitions = await this.getTransitions(ticketKey);
     const match =
       transitions.find((t) => t.name === transitionName) ||
-      transitions.find((t) => t.to?.name === transitionName);
+      transitions.find((t) => t.to?.name === transitionName) ||
+      transitions.find((t) => t.name && t.name.toLowerCase() === String(transitionName).toLowerCase()) ||
+      transitions.find((t) => t.to?.name && t.to.name.toLowerCase() === String(transitionName).toLowerCase());
     if (!match) return { transitioned: false, reason: 'transition-not-available' };
     await this._withJiraBackoff(() =>
       this._request('POST', `/rest/api/3/issue/${ticketKey}/transitions`, { transition: { id: match.id } })
