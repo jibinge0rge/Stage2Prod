@@ -4,6 +4,7 @@ const { createEventsRepo } = require('./db/repositories/eventsRepo');
 const { createCursorRepo } = require('./db/repositories/cursorRepo');
 const { createLockEventsRepo } = require('./db/repositories/lockEventsRepo');
 const { createReposRepo } = require('./db/repositories/reposRepo');
+const { createCutsRepo } = require('./db/repositories/cutsRepo');
 const { createGithubClientRegistry } = require('./clients/githubRegistry');
 const { createDisplayGithubClients } = require('./clients/displayReadCache');
 const { createJiraClient } = require('./clients/jira');
@@ -24,6 +25,7 @@ function buildContext(config, overrides = {}) {
   const cursorRepo = overrides.cursorRepo || createCursorRepo(db);
   const lockEventsRepo = overrides.lockEventsRepo || createLockEventsRepo(db);
   const reposRepo = overrides.reposRepo || createReposRepo(db);
+  const cutsRepo = overrides.cutsRepo || createCutsRepo(db);
 
   const lockManager = overrides.lockManager || new RefLockManager();
   lockManager.attachRepo(lockEventsRepo);
@@ -45,6 +47,7 @@ function buildContext(config, overrides = {}) {
     cursorRepo,
     lockEventsRepo,
     reposRepo,
+    cutsRepo,
     lockManager,
     githubRegistry,
     jira,

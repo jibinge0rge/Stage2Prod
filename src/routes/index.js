@@ -7,6 +7,7 @@ const { createStagingRouter } = require('./staging');
 const { createReposRouter } = require('./repos');
 const { createGithubReposRouter } = require('./githubRepos');
 const { createUntrackedRouter } = require('./untracked');
+const { createCutsRouter } = require('./cuts');
 
 function mountRoutes(app, ctx) {
   const api = express.Router();
@@ -18,6 +19,7 @@ function mountRoutes(app, ctx) {
   api.use(createReposRouter(ctx));
   api.use(createGithubReposRouter(ctx));
   api.use(createUntrackedRouter(ctx));
+  api.use(createCutsRouter(ctx));
   app.use('/api', api);
 }
 

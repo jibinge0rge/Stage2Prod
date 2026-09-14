@@ -18,6 +18,13 @@ function shortSha(sha) {
   return sha ? sha.slice(0, 7) : '—';
 }
 
+function formatCutWhen(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
 /** Short labels for narrow airgap cards — full names already live in the column title. */
 const COMPACT_BADGE_LABELS = {
   staging_queued: 'Awaiting merge',
@@ -127,16 +134,15 @@ function DriftPill({ commitsAhead, onStagingCount }) {
  * Merged tickets only in Production/Staging; awaiting tickets sit in the airgaps.
  */
 export default function BranchBoard({ entry, untrackedStagingCount = 0, inDevTickets = [] }) {
-  const { openReset, openTicket } = useAppContext();
+  const { openReset, openTicket, openCut, openCutModal } = useAppContext();
   const staging = entry?.staging;
   const develop = entry?.develop;
   const repo = entry?.repo;
+  const cuts = entry?.cuts ?? [];
 
   const stagingSide = staging?.tickets ?? [];
   const developSide = develop?.tickets ?? [];
 
-  // Merged onto the branch (QA reject still sits on staging until cleared).
-  const onProduction = developSide.filter((t) => t.pipelineState === 'develop');
   const onStaging = stagingSide.filter(
     (t) => t.pipelineState === 'staging' || t.pipelineState === 'rejected'
   );
@@ -169,15 +175,25 @@ export default function BranchBoard({ entry, untrackedStagingCount = 0, inDevTic
         <div className="spacer" />
         <div style={{ fontSize: 11, color: 'var(--n-muted)' }}>merge commits only</div>
         {repo ? (
-          <button
-            type="button"
-            className="btn btn-outline"
-            style={{ borderColor: 'var(--danger-border)', color: 'var(--danger)' }}
-            onClick={() => openReset(repo)}
-            title={`Confirm reset of ${repo.stagingBranch} to ${repo.productionBranch}`}
-          >
-            Reset staging
-          </button>
+          <>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => openCutModal(repo)}
+              title={`Cut a production branch from ${repo.stagingBranch}`}
+            >
+              Cut from staging
+            </button>
+            <button
+              type="button"
+              className="btn btn-outline"
+              style={{ borderColor: 'var(--danger-border)', color: 'var(--danger)' }}
+              onClick={() => openReset(repo)}
+              title={`Confirm reset of ${repo.stagingBranch} to ${repo.productionBranch}`}
+            >
+              Reset staging
+            </button>
+          </>
         ) : null}
       </div>
 
@@ -189,16 +205,36 @@ export default function BranchBoard({ entry, untrackedStagingCount = 0, inDevTic
               Production
             </span>
             <span className={styles.laneBranch}>
-              {repo?.productionBranch ?? '—'}
-              {develop?.headSha ? ` / ${shortSha(develop.headSha)}` : ''}
+              {cuts[0]?.branchName ?? repo?.productionBranch ?? '—'}
+              {cuts[0]?.sha ? ` / ${shortSha(cuts[0].sha)}` : develop?.headSha ? ` / ${shortSha(develop.headSha)}` : ''}
             </span>
           </div>
-          <div className={styles.flowHint}>Merged onto production</div>
+          <div className={styles.flowHint}>Cuts from staging · latest first</div>
           <div className={styles.ticketList}>
-            {onProduction.length === 0 ? (
-              <div className={styles.empty}>No recent merges on production.</div>
+            {cuts.length === 0 ? (
+              <div className={styles.empty}>No production cuts yet. Cut from staging to ship.</div>
             ) : (
-              onProduction.map((t) => <TicketCard key={t.key} ticket={t} onSelect={openTicket} />)
+              cuts.map((cut) => (
+                <button
+                  key={cut.id}
+                  type="button"
+                  className={styles.cutCard}
+                  onClick={() => openCut({ owner: repo.owner, name: repo.name, id: cut.id })}
+                  title={`Tickets that landed from staging in ${cut.branchName}`}
+                >
+                  <div className={styles.cutCardTop}>
+                    <span className={`mono ${styles.cutName}`}>{cut.branchName}</span>
+                    {cut.isLatest ? <span className={styles.latestMark}>Latest</span> : null}
+                  </div>
+                  <div className={styles.cutMeta}>
+                    <span className="mono">{shortSha(cut.sha)}</span>
+                    <span>
+                      {cut.ticketCount} {cut.ticketCount === 1 ? 'ticket' : 'tickets'}
+                    </span>
+                    {cut.createdAt ? <span>{formatCutWhen(cut.createdAt)}</span> : null}
+                  </div>
+                </button>
+              ))
             )}
           </div>
         </div>

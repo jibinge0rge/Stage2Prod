@@ -291,6 +291,75 @@
   color: var(--warning);
 }
 
+.cutCard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--n-border);
+  border-radius: var(--r-card);
+  background: var(--n-surface);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  appearance: none;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.cutCard:hover {
+  background: var(--hover-overlay);
+}
+
+.cutCard:focus,
+.cutCard:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: -2px;
+}
+
+.cutCardTop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cutName {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--n-strongest);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.latestMark {
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--success-text);
+  background: var(--success-fill);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+.cutMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  color: var(--n-muted);
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
 @media (max-width: 960px) {
   .lanes {
     grid-template-columns: 1fr;

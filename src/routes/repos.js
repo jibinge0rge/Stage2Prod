@@ -89,9 +89,10 @@ function createReposRouter({ config, reposRepo, ticketsRepo, eventsRepo, repoRes
       if (!info.exists) {
         return res.status(404).json({ error: 'not_found', message: `${owner}/${name} was not found (or the token can't see it)` });
       }
+      const productionExplicit = Boolean(productionBranch);
       productionBranch = productionBranch || info.defaultBranch || 'develop';
       stagingBranch = stagingBranch || 'staging';
-      if (productionBranch === stagingBranch) {
+      if (productionExplicit && productionBranch === stagingBranch) {
         return res.status(400).json({ error: 'bad_request', message: 'productionBranch and stagingBranch must be different' });
       }
       let normalizedMap;
@@ -124,7 +125,7 @@ function createReposRouter({ config, reposRepo, ticketsRepo, eventsRepo, repoRes
     const current = reposRepo.get(owner, name);
     const nextProduction = productionBranch || current.productionBranch;
     const nextStaging = stagingBranch || current.stagingBranch;
-    if (nextProduction === nextStaging) {
+    if (productionBranch && nextProduction === nextStaging) {
       return res.status(400).json({ error: 'bad_request', message: 'productionBranch and stagingBranch must be different' });
     }
 

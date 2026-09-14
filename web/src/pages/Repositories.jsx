@@ -8,15 +8,15 @@ import RepoTeamRoles, { emptyTeamRoles } from '../components/RepoTeamRoles';
 const fieldWidth = { width: 150 };
 
 /** Common staging-ish names to prefer as the default staging selection, in order. */
-const STAGING_NAME_GUESSES = ['staging', 'stage', 'qa', 'test'];
+const STAGING_NAME_GUESSES = ['staging', 'stage', 'qa', 'test', 'develop'];
 
-function guessStagingBranch(branches, productionBranch) {
+function guessStagingBranch(branches) {
   const lower = branches.map((b) => b.toLowerCase());
   for (const guess of STAGING_NAME_GUESSES) {
     const idx = lower.indexOf(guess);
-    if (idx !== -1 && branches[idx] !== productionBranch) return branches[idx];
+    if (idx !== -1) return branches[idx];
   }
-  return branches.find((b) => b !== productionBranch) || productionBranch;
+  return branches.find((b) => !/release/i.test(b)) || branches[0] || 'develop';
 }
 
 /**
@@ -119,7 +119,6 @@ function teamRolesSummary(teamRoles) {
 
 function WatchedRepoRow({ repo, onRemove, removing, onSaved, branchCache, setBranchCache, showToast }) {
   const [editing, setEditing] = useState(false);
-  const [productionBranch, setProductionBranch] = useState(repo.productionBranch);
   const [stagingBranch, setStagingBranch] = useState(repo.stagingBranch);
   const [jiraProjectKey, setJiraProjectKey] = useState(repo.jiraProjectKey || '');
   const [teamRoles, setTeamRoles] = useState(repo.teamRoles || emptyTeamRoles());
@@ -135,7 +134,6 @@ function WatchedRepoRow({ repo, onRemove, removing, onSaved, branchCache, setBra
 
   useEffect(() => {
     if (!editing) {
-      setProductionBranch(repo.productionBranch);
       setStagingBranch(repo.stagingBranch);
       setJiraProjectKey(repo.jiraProjectKey || '');
       setTeamRoles(repo.teamRoles || emptyTeamRoles());
@@ -143,15 +141,10 @@ function WatchedRepoRow({ repo, onRemove, removing, onSaved, branchCache, setBra
   }, [repo, editing]);
 
   async function save() {
-    if (productionBranch === stagingBranch) {
-      setError('Production and staging branch names must be different.');
-      return;
-    }
     setSaving(true);
     setError(null);
     try {
       const result = await patchJson(`/repos/${repo.owner}/${repo.name}`, {
-        productionBranch,
         stagingBranch,
         jiraProjectKey,
         teamRoles,
@@ -187,7 +180,7 @@ function WatchedRepoRow({ repo, onRemove, removing, onSaved, branchCache, setBra
         {!editing && (
           <>
             <span className="mono" style={{ fontSize: 11, color: 'var(--n-muted)' }}>
-              {repo.productionBranch} / {repo.stagingBranch}
+              staging {repo.stagingBranch}
             </span>
             {repo.jiraProjectKey ? (
               <span className="mono badge" style={{ background: 'var(--n-fill-subtle)', color: 'var(--n-body)' }}>
@@ -221,17 +214,6 @@ function WatchedRepoRow({ repo, onRemove, removing, onSaved, branchCache, setBra
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 10 }}>
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 10, color: 'var(--n-muted)' }}>
-              Production branch
-              <BranchSelect
-                branches={branches}
-                loading={loading}
-                error={branchesError}
-                value={productionBranch}
-                onChange={setProductionBranch}
-                title="Production branch"
-              />
-            </label>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 10, color: 'var(--n-muted)' }}>
               Staging branch
               <BranchSelect
                 branches={branches}
@@ -254,7 +236,6 @@ function WatchedRepoRow({ repo, onRemove, removing, onSaved, branchCache, setBra
               className="btn btn-plain"
               onClick={() => {
                 setEditing(false);
-                setProductionBranch(repo.productionBranch);
                 setStagingBranch(repo.stagingBranch);
                 setJiraProjectKey(repo.jiraProjectKey || '');
                 setTeamRoles(repo.teamRoles || emptyTeamRoles());
@@ -278,7 +259,6 @@ function WatchedRepoRow({ repo, onRemove, removing, onSaved, branchCache, setBra
 
 function CandidateRow({ repo, pending, onAdd, branchCache, setBranchCache }) {
   const { branches, loading, error } = useRepoBranches(repo.owner, repo.name, branchCache, setBranchCache);
-  const [productionBranch, setProductionBranch] = useState(repo.defaultBranch || 'develop');
   const [stagingBranch, setStagingBranch] = useState('staging');
   const [pickedStaging, setPickedStaging] = useState(false);
   const [jiraProjectKey, setJiraProjectKey] = useState('');
@@ -288,7 +268,7 @@ function CandidateRow({ repo, pending, onAdd, branchCache, setBranchCache }) {
   // but only if the user hasn't already picked one themselves.
   useEffect(() => {
     if (branches && !pickedStaging) {
-      setStagingBranch(guessStagingBranch(branches, productionBranch));
+      setStagingBranch(guessStagingBranch(branches));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [branches]);
@@ -324,25 +304,11 @@ function CandidateRow({ repo, pending, onAdd, branchCache, setBranchCache }) {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 1.2fr) 100px auto',
+            gridTemplateColumns: 'minmax(0, 1.2fr) 100px auto',
             gap: 8,
             alignItems: 'center',
           }}
         >
-          <div style={{ minWidth: 0 }}>
-            <div className="eyebrow" style={{ marginBottom: 4 }}>
-              Production
-            </div>
-            <BranchSelect
-              branches={branches}
-              loading={loading}
-              error={error}
-              value={productionBranch}
-              onChange={setProductionBranch}
-              title="Production branch"
-              style={selectWidth}
-            />
-          </div>
           <div style={{ minWidth: 0 }}>
             <div className="eyebrow" style={{ marginBottom: 4 }}>
               Staging
@@ -376,7 +342,7 @@ function CandidateRow({ repo, pending, onAdd, branchCache, setBranchCache }) {
               type="button"
               className="btn btn-primary"
               disabled={pending}
-              onClick={() => onAdd(repo, { productionBranch, stagingBranch, jiraProjectKey })}
+              onClick={() => onAdd(repo, { stagingBranch, jiraProjectKey })}
             >
               {pending ? 'Adding…' : 'Watch'}
             </button>
@@ -418,8 +384,8 @@ export default function Repositories() {
 
   async function addRepo(repo, draft) {
     const key = `${repo.owner}/${repo.name}`;
-    if (draft.productionBranch === draft.stagingBranch) {
-      setAddError(`${key}: production and staging branch names must be different.`);
+    if (!draft.stagingBranch) {
+      setAddError(`${key}: pick a staging branch.`);
       return;
     }
     setPendingKey(key);

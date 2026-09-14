@@ -89,9 +89,9 @@ async function getRepoInfo(token, owner, name) {
 const MAX_BRANCHES = 300; // 3 pages at 100/page
 
 /**
- * Lists branch names for a repo — used to populate the production/staging
- * branch pickers as dropdowns instead of free-text, both when connecting a
- * new repo and when editing an already-watched one's branch names.
+ * Lists branch names for a repo — used to populate the staging branch
+ * picker as a dropdown, both when connecting a new repo and when editing
+ * an already-watched one's staging branch.
  */
 async function listBranchesForRepo(token, owner, name) {
   assertValidSegment(owner, 'owner');

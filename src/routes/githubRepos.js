@@ -26,8 +26,8 @@ function createGithubReposRouter({ config, reposRepo }) {
     }
   });
 
-  // Used to populate production/staging branch pickers as dropdowns —
-  // works for any repo the token can see, watched or not yet watched.
+  // Used to populate the staging branch picker as a dropdown — works
+  // for any repo the token can see, watched or not yet watched.
   router.get('/github/repos/:owner/:name/branches', requireApiToken, async (req, res, next) => {
     try {
       const branches = await listBranchesForRepo(config.GITHUB_TOKEN, req.params.owner, req.params.name);

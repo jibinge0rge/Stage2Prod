@@ -12,12 +12,24 @@ export function AppProvider({ children }) {
   const [resetting, setResetting] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [selectedTicketKey, setSelectedTicketKey] = useState(null);
+  const [selectedCut, setSelectedCut] = useState(null); // { owner, name, id } | null
+  const [cutTarget, setCutTarget] = useState(null); // repo | null
   const toastTimer = useRef(null);
   const refreshers = useRef(new Set());
   const healthRefreshRef = useRef(null);
 
-  const openTicket = useCallback((key) => setSelectedTicketKey(key), []);
+  const openTicket = useCallback((key) => {
+    setSelectedCut(null);
+    setSelectedTicketKey(key);
+  }, []);
   const closeTicket = useCallback(() => setSelectedTicketKey(null), []);
+  const openCut = useCallback((cut) => {
+    setSelectedTicketKey(null);
+    setSelectedCut(cut);
+  }, []);
+  const closeCut = useCallback(() => setSelectedCut(null), []);
+  const openCutModal = useCallback((repo) => setCutTarget(repo), []);
+  const closeCutModal = useCallback(() => setCutTarget(null), []);
 
   const registerRefresh = useCallback((fn) => {
     if (!fn) return () => {};
@@ -129,6 +141,12 @@ export function AppProvider({ children }) {
     selectedTicketKey,
     openTicket,
     closeTicket,
+    selectedCut,
+    openCut,
+    closeCut,
+    cutTarget,
+    openCutModal,
+    closeCutModal,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

@@ -4,6 +4,7 @@ const { createEventsRepo } = require('../src/db/repositories/eventsRepo');
 const { createCursorRepo } = require('../src/db/repositories/cursorRepo');
 const { createLockEventsRepo } = require('../src/db/repositories/lockEventsRepo');
 const { createReposRepo } = require('../src/db/repositories/reposRepo');
+const { createCutsRepo } = require('../src/db/repositories/cutsRepo');
 const { RefLockManager } = require('../src/lib/mutex');
 
 function createTestDb() {
@@ -13,9 +14,10 @@ function createTestDb() {
   const cursorRepo = createCursorRepo(db);
   const lockEventsRepo = createLockEventsRepo(db);
   const reposRepo = createReposRepo(db);
+  const cutsRepo = createCutsRepo(db);
   const lockManager = new RefLockManager();
   lockManager.attachRepo(lockEventsRepo);
-  return { db, ticketsRepo, eventsRepo, cursorRepo, lockEventsRepo, reposRepo, lockManager };
+  return { db, ticketsRepo, eventsRepo, cursorRepo, lockEventsRepo, reposRepo, cutsRepo, lockManager };
 }
 
 function seedTicket(ticketsRepo, overrides = {}) {

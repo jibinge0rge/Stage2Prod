@@ -5,8 +5,10 @@ import { ROUTES } from '../lib/routeMeta';
 import { useApi, useGlobalLoading } from '../lib/api';
 import { useAppContext } from '../context/AppContext';
 import ResetModal from '../components/ResetModal';
+import CutModal from '../components/CutModal';
 import Toast from '../components/Toast';
 import TicketDrawer from '../components/TicketDrawer';
+import CutDrawer from '../components/CutDrawer';
 import ThemeToggle from '../components/ThemeToggle';
 import ServiceHealthDots from '../components/ServiceHealthDots';
 import RepoSelector from '../components/RepoSelector';
@@ -23,7 +25,7 @@ function formatEventTime(iso) {
 
 export default function AppShell() {
   const location = useLocation();
-  const { syncNow, syncing, toast, selectedTicketKey, closeTicket, registerHealthRefresh } = useAppContext();
+  const { syncNow, syncing, toast, selectedTicketKey, closeTicket, selectedCut, closeCut, registerHealthRefresh } = useAppContext();
   const { selectedRepoKey } = useRepoFilter();
   const { data: health, refresh: refreshHealth } = useApi('/health', { intervalMs: 15000 });
   const { data: eventsData } = useApi('/events?limit=1', { intervalMs: 15000 });
@@ -37,6 +39,7 @@ export default function AppShell() {
   // "Nav changes screen and closes the drawer" (per the design brief).
   useEffect(() => {
     closeTicket();
+    closeCut();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname]);
 
@@ -171,9 +174,11 @@ export default function AppShell() {
         </main>
 
         {selectedTicketKey && <TicketDrawer ticketKey={selectedTicketKey} onClose={closeTicket} />}
+        {selectedCut && <CutDrawer cut={selectedCut} onClose={closeCut} />}
       </div>
 
       <ResetModal />
+      <CutModal />
       {toast ? <Toast message={toast} /> : null}
     </div>
   );
