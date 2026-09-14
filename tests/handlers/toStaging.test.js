@@ -59,6 +59,42 @@ describe('toStaging handler', () => {
     expect(events[0].repo).toEqual({ owner: 'acme', name: 'widgets' });
   });
 
+  it('assigns the repo default QA when the ticket enters In QA', async () => {
+    const deps = baseDeps({
+      teamRoles: {
+        qa: [{ accountId: 'q1', displayName: 'Quinn', avatarUrl: 'https://x/q.png' }],
+        de: [],
+        da: [],
+        defaults: { de: null, qa: 'q1', da: null },
+      },
+    });
+    deps.jira.tryAssign = vi.fn().mockResolvedValue({ assigned: true });
+
+    await toStaging(deps);
+
+    expect(deps.jira.tryAssign).toHaveBeenCalledWith('PROJ-1', 'q1');
+    expect(deps.ticketsRepo.get('PROJ-1').assignee_name).toBe('Quinn');
+  });
+
+  it('still assigns QA when no matching branch is found', async () => {
+    const deps = baseDeps({
+      teamRoles: {
+        qa: [{ accountId: 'q1', displayName: 'Quinn', avatarUrl: null }],
+        de: [],
+        da: [],
+        defaults: { de: null, qa: 'q1', da: null },
+      },
+    });
+    deps.jira.tryAssign = vi.fn().mockResolvedValue({ assigned: true });
+    deps.ticketMatcher.findBranchForTicket = vi.fn().mockResolvedValue(null);
+
+    const result = await toStaging(deps);
+
+    expect(result.outcome).toBe(OUTCOMES.NOTED);
+    expect(deps.jira.tryAssign).toHaveBeenCalledWith('PROJ-1', 'q1');
+    expect(deps.github.createPr).not.toHaveBeenCalled();
+  });
+
   it('reuses an already-open PR instead of creating a duplicate', async () => {
     const deps = baseDeps();
     deps.ticketMatcher.findOpenPrForTicket = vi.fn().mockResolvedValue({ number: 7, head: { ref: 'feat/PROJ-1-thing' } });

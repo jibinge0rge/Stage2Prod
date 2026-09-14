@@ -89,6 +89,7 @@ async function openTicketPr({
           eventsRepo,
           ticketMatcher,
           statusMap: repoConfig.effectiveStatusHandlerMap || repoConfig.statusHandlerMap,
+          teamRoles: repoConfig.teamRoles,
         })
     );
     if (result.outcome !== OUTCOMES.PR_OPENED) {
@@ -118,6 +119,7 @@ async function openTicketPr({
         eventsRepo,
         ticketMatcher,
         statusMap: repoConfig.effectiveStatusHandlerMap || repoConfig.statusHandlerMap,
+        teamRoles: repoConfig.teamRoles,
       })
   );
   if (result.outcome !== OUTCOMES.PR_OPENED) {

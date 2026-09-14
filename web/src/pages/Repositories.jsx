@@ -100,12 +100,20 @@ function JiraProjectKeyInput({ value, onChange, title, style }) {
 function teamRolesSummary(teamRoles) {
   const roles = teamRoles || emptyTeamRoles();
   const parts = [
-    ['DE', roles.de?.length || 0],
-    ['QA', roles.qa?.length || 0],
-    ['DA', roles.da?.length || 0],
+    ['DE', 'de'],
+    ['QA', 'qa'],
+    ['DA', 'da'],
+    ['CDL', 'cdl'],
   ]
-    .filter(([, n]) => n > 0)
-    .map(([label, n]) => `${label} ${n}`);
+    .filter(([, id]) => (roles[id]?.length || 0) > 0)
+    .map(([label, id]) => {
+      const people = roles[id];
+      const defaultId = people.length === 1 ? people[0].accountId : roles.defaults?.[id];
+      const def = people.find((p) => p.accountId === defaultId);
+      if (people.length === 1 && def) return `${label} ${def.displayName}`;
+      if (def) return `${label} ${people.length} (default ${def.displayName})`;
+      return `${label} ${people.length}`;
+    });
   return parts.length ? parts.join(' · ') : null;
 }
 

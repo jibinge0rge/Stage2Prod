@@ -1,6 +1,7 @@
 const { OUTCOMES, PIPELINE_STATES, JIRA_COMMENTS, refKey } = require('../lib/constants');
 const { syncJiraStatus } = require('../lib/syncJiraStatus');
 const { jiraStatusForStage } = require('../lib/statusHandlerMap');
+const { assignTicketToRole } = require('../lib/assignTicket');
 
 /**
  * Lock-free core: ensures a PR into production exists (reusing one a
@@ -23,6 +24,7 @@ async function ensureDevelopPrCore({
   eventsRepo,
   ticketMatcher,
   statusMap,
+  teamRoles,
 }) {
   let pr = await ticketMatcher.findOpenPrForTicket(ticketKey, { base: productionBranch });
   let created = false;
@@ -73,6 +75,18 @@ async function ensureDevelopPrCore({
     status: jiraStatusForStage('ready_for_release', statusMap),
     log,
   });
+  await assignTicketToRole({
+    jira,
+    ticketsRepo,
+    eventsRepo,
+    ticketKey,
+    teamRoles,
+    role: 'de',
+    log,
+    trigger,
+    repoOwner,
+    repoName,
+  });
   eventsRepo.insertEvent({
     ticketKey,
     trigger,
@@ -103,6 +117,7 @@ async function toDevelop({
   lockManager,
   ticketMatcher,
   statusMap,
+  teamRoles,
 }) {
   const trigger = `Poll · status change`;
   return lockManager.withLock(
@@ -124,6 +139,7 @@ async function toDevelop({
         eventsRepo,
         ticketMatcher,
         statusMap,
+        teamRoles,
       })
   );
 }

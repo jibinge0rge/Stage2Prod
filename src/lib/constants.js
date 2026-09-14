@@ -38,6 +38,8 @@ const JIRA_COMMENTS = Object.freeze({
     `Pull request #${prNumber} into \`${productionBranch}\` was closed without merging. The branch is still there if you want to open a new PR.`,
   LINKED_PR: (prNumber, head, base) =>
     `Linked pull request #${prNumber} (\`${head}\` → \`${base}\`) from Stage2Prod.`,
+  FEATURE_WORK_GONE: (branch, openStatus) =>
+    `Feature branch \`${branch}\` is gone on GitHub (deleted, along with its pull request). Ticket reset to ${openStatus} so a new branch can be created.`,
 });
 
 // Short ref names, as displayed/stored in lock_events.ref_name. A lock key

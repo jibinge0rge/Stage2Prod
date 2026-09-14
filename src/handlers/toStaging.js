@@ -1,6 +1,7 @@
 const { OUTCOMES, PIPELINE_STATES, JIRA_COMMENTS, refKey } = require('../lib/constants');
 const { syncJiraStatus } = require('../lib/syncJiraStatus');
 const { jiraStatusForStage } = require('../lib/statusHandlerMap');
+const { assignTicketToRole } = require('../lib/assignTicket');
 
 /**
  * Lock-free core: ensures a PR from the ticket's feature branch into
@@ -27,7 +28,21 @@ async function ensureStagingPrCore({
   eventsRepo,
   ticketMatcher,
   statusMap,
+  teamRoles,
 }) {
+  await assignTicketToRole({
+    jira,
+    ticketsRepo,
+    eventsRepo,
+    ticketKey,
+    teamRoles,
+    role: 'qa',
+    log,
+    trigger,
+    repoOwner,
+    repoName,
+  });
+
   const branch = await ticketMatcher.findBranchForTicket(ticketKey);
   if (!branch) {
     eventsRepo.insertEvent({
@@ -103,6 +118,7 @@ async function toStaging({
   lockManager,
   ticketMatcher,
   statusMap,
+  teamRoles,
 }) {
   const trigger = `Poll · status change`;
   return lockManager.withLock(
@@ -124,6 +140,7 @@ async function toStaging({
         eventsRepo,
         ticketMatcher,
         statusMap,
+        teamRoles,
       })
   );
 }

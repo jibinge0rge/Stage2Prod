@@ -47,9 +47,23 @@ describe('GET /api/tickets', () => {
 
     const all = await request(app).get('/api/tickets');
     const byKey = Object.fromEntries(all.body.tickets.map((t) => [t.key, t.repo]));
-    expect(byKey['PROJ-1']).toEqual({ owner: 'acme', name: 'widgets', productionBranch: 'main', stagingBranch: 'qa' });
+    expect(byKey['PROJ-1']).toEqual({
+      owner: 'acme',
+      name: 'widgets',
+      productionBranch: 'main',
+      stagingBranch: 'qa',
+      jiraProjectKey: null,
+      teamRoles: { de: [], qa: [], da: [], cdl: [], defaults: { de: null, qa: null, da: null, cdl: null } },
+    });
     // PROJ-2's repo was never registered in reposRepo — falls back to the app defaults rather than crashing.
-    expect(byKey['PROJ-2']).toEqual({ owner: 'other', name: 'repo', productionBranch: 'develop', stagingBranch: 'staging' });
+    expect(byKey['PROJ-2']).toEqual({
+      owner: 'other',
+      name: 'repo',
+      productionBranch: 'develop',
+      stagingBranch: 'staging',
+      jiraProjectKey: null,
+      teamRoles: { de: [], qa: [], da: [], cdl: [], defaults: { de: null, qa: null, da: null, cdl: null } },
+    });
     expect(byKey['PROJ-3']).toBeNull();
 
     const filtered = await request(app).get('/api/tickets?repo=acme/widgets');
@@ -152,6 +166,34 @@ describe('GET /api/tickets', () => {
     expect(res.status).toBe(200);
     expect(res.body.aheadOfStaging).toBe(2);
     expect(res.body.aheadOfProduction).toBe(5);
+  });
+
+  it('GET /api/tickets/:key resets to To Do when the feature branch was deleted on GitHub', async () => {
+    const ctx = buildTestCtx();
+    ctx.reposRepo.add('acme', 'widgets', { productionBranch: 'main', stagingBranch: 'qa' });
+    ctx.ticketsRepo.upsert({
+      key: 'PROJ-1',
+      summary: 'Fix login',
+      jiraStatus: 'In QA',
+      pipelineState: 'unmerged',
+      repoOwner: 'acme',
+      repoName: 'widgets',
+    });
+    ctx.ticketsRepo.setGithubFacts('PROJ-1', { branchName: 'feat/PROJ-1-login' });
+    const err = new Error('Not Found');
+    err.status = 404;
+    ctx.repoResolver.getClient = vi.fn(() => ({
+      getRef: vi.fn().mockRejectedValue(err),
+    }));
+    const app = createApp(ctx);
+
+    const res = await request(app).get('/api/tickets/PROJ-1');
+    expect(res.status).toBe(200);
+    expect(res.body.branch).toBeNull();
+    expect(res.body.pipelineState).toBe('unmerged');
+    expect(res.body.jiraStatus).toBe('Open');
+    expect(ctx.jira.tryTransition).toHaveBeenCalledWith('PROJ-1', 'Open');
+    expect(ctx.ticketsRepo.get('PROJ-1').branch_name).toBeNull();
   });
 
   it('GET /api/tickets/:key marks mergeBlockedForAuthor when the token opened the PR and GitHub blocks merge', async () => {
@@ -360,6 +402,45 @@ describe('POST /api/tickets/:key/comment', () => {
       .post('/api/tickets/PROJ-1/comment')
       .set('Authorization', `Bearer ${config.API_TOKEN}`)
       .send({ text: '   ' });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('POST /api/tickets/:key/assignee', () => {
+  it('401s without a bearer token', async () => {
+    const ctx = buildTestCtx();
+    ctx.ticketsRepo.upsert({ key: 'PROJ-1', jiraStatus: 'In Development', pipelineState: 'unmerged' });
+    const app = createApp(ctx);
+    const res = await request(app).post('/api/tickets/PROJ-1/assignee').send({ accountId: 'q1' });
+    expect(res.status).toBe(401);
+  });
+
+  it('assigns the ticket in Jira and updates the local row', async () => {
+    const ctx = buildTestCtx();
+    ctx.jira.assign = vi.fn().mockResolvedValue({ assigned: true, accountId: 'q1' });
+    ctx.ticketsRepo.upsert({ key: 'PROJ-1', jiraStatus: 'In QA', pipelineState: 'staging' });
+    const app = createApp(ctx);
+
+    const res = await request(app)
+      .post('/api/tickets/PROJ-1/assignee')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send({ accountId: 'q1', displayName: 'Quinn', avatarUrl: 'https://x/q.png' });
+
+    expect(res.status).toBe(200);
+    expect(ctx.jira.assign).toHaveBeenCalledWith('PROJ-1', 'q1');
+    expect(res.body.assignee).toEqual({ name: 'Quinn', avatarUrl: 'https://x/q.png' });
+    expect(ctx.ticketsRepo.get('PROJ-1').assignee_name).toBe('Quinn');
+  });
+
+  it('400s when accountId is missing', async () => {
+    const ctx = buildTestCtx();
+    ctx.ticketsRepo.upsert({ key: 'PROJ-1', jiraStatus: 'In QA', pipelineState: 'staging' });
+    const app = createApp(ctx);
+
+    const res = await request(app)
+      .post('/api/tickets/PROJ-1/assignee')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send({ displayName: 'Quinn' });
     expect(res.status).toBe(400);
   });
 });

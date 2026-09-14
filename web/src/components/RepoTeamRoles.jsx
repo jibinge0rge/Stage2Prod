@@ -2,16 +2,31 @@ import { useEffect, useRef, useState } from 'react';
 import { getJson } from '../lib/api';
 
 const ROLES = [
-  { id: 'de', label: 'DE' },
-  { id: 'qa', label: 'QA' },
-  { id: 'da', label: 'DA' },
+  { id: 'de', label: 'DE', hint: 'Staging→prod PRs assign to the default DE' },
+  { id: 'qa', label: 'QA', hint: 'Tickets entering In QA assign to the default QA' },
+  { id: 'da', label: 'DA', hint: '' },
+  { id: 'cdl', label: 'CDL', hint: '' },
 ];
 
-function emptyRoles() {
-  return { de: [], qa: [], da: [] };
+function emptyDefaults() {
+  return { de: null, qa: null, da: null, cdl: null };
 }
 
-function PersonChip({ person, onRemove }) {
+function emptyRoles() {
+  return { de: [], qa: [], da: [], cdl: [], defaults: emptyDefaults() };
+}
+
+function withDefaults(roles) {
+  return {
+    de: roles?.de || [],
+    qa: roles?.qa || [],
+    da: roles?.da || [],
+    cdl: roles?.cdl || [],
+    defaults: { ...emptyDefaults(), ...(roles?.defaults || {}) },
+  };
+}
+
+function PersonChip({ person, isDefault, canSetDefault, onSetDefault, onRemove }) {
   return (
     <span
       style={{
@@ -22,8 +37,8 @@ function PersonChip({ person, onRemove }) {
         height: 24,
         padding: '0 6px 0 4px',
         borderRadius: 12,
-        background: 'var(--n-fill-subtle)',
-        border: '1px solid var(--n-border)',
+        background: isDefault ? 'var(--success-fill)' : 'var(--n-fill-subtle)',
+        border: `1px solid ${isDefault ? 'var(--success)' : 'var(--n-border)'}`,
         fontSize: 11,
         color: 'var(--n-body)',
       }}
@@ -51,6 +66,30 @@ function PersonChip({ person, onRemove }) {
       <span className="truncate" style={{ maxWidth: 140 }}>
         {person.displayName}
       </span>
+      {isDefault ? (
+        <span style={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--success-text)' }}>
+          default
+        </span>
+      ) : canSetDefault ? (
+        <button
+          type="button"
+          onClick={onSetDefault}
+          title={`Make ${person.displayName} the default`}
+          style={{
+            border: 'none',
+            background: 'transparent',
+            color: 'var(--n-muted)',
+            cursor: 'pointer',
+            padding: 0,
+            fontSize: 9,
+            fontWeight: 600,
+            letterSpacing: '0.04em',
+            textTransform: 'uppercase',
+          }}
+        >
+          set default
+        </button>
+      ) : null}
       {onRemove ? (
         <button
           type="button"
@@ -75,10 +114,11 @@ function PersonChip({ person, onRemove }) {
 
 /**
  * Per-repo DE / QA / DA roster. People are looked up from Jira
- * (assignable to the repo's project key when set).
+ * (assignable to the repo's project key when set). A role with one
+ * person is always the default; with several, pick who auto-assignment uses.
  */
 export default function RepoTeamRoles({ value, onChange, projectKey, disabled }) {
-  const roles = value || emptyRoles();
+  const roles = withDefaults(value);
   const [query, setQuery] = useState('');
   const [addRole, setAddRole] = useState('de');
   const [results, setResults] = useState([]);
@@ -120,22 +160,41 @@ export default function RepoTeamRoles({ value, onChange, projectKey, disabled })
   function addPerson(person) {
     const list = roles[addRole] || [];
     if (list.some((p) => p.accountId === person.accountId)) return;
+    const nextList = [...list, {
+      accountId: person.accountId,
+      displayName: person.displayName,
+      avatarUrl: person.avatarUrl || null,
+    }];
+    const nextDefaults = { ...roles.defaults };
+    if (nextList.length === 1) nextDefaults[addRole] = person.accountId;
     onChange({
       ...roles,
-      [addRole]: [...list, {
-        accountId: person.accountId,
-        displayName: person.displayName,
-        avatarUrl: person.avatarUrl || null,
-      }],
+      [addRole]: nextList,
+      defaults: nextDefaults,
     });
     setQuery('');
     setResults([]);
   }
 
   function removePerson(roleId, accountId) {
+    const nextList = (roles[roleId] || []).filter((p) => p.accountId !== accountId);
+    const nextDefaults = { ...roles.defaults };
+    if (nextList.length === 1) {
+      nextDefaults[roleId] = nextList[0].accountId;
+    } else if (nextDefaults[roleId] === accountId) {
+      nextDefaults[roleId] = null;
+    }
     onChange({
       ...roles,
-      [roleId]: (roles[roleId] || []).filter((p) => p.accountId !== accountId),
+      [roleId]: nextList,
+      defaults: nextDefaults,
+    });
+  }
+
+  function setDefault(roleId, accountId) {
+    onChange({
+      ...roles,
+      defaults: { ...roles.defaults, [roleId]: accountId },
     });
   }
 
@@ -146,36 +205,54 @@ export default function RepoTeamRoles({ value, onChange, projectKey, disabled })
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
-        {ROLES.map((role) => (
-          <div
-            key={role.id}
-            style={{
-              padding: 10,
-              border: '1px solid var(--n-border)',
-              borderRadius: 'var(--r-card)',
-              background: 'var(--n-app-bg)',
-              minWidth: 0,
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 8 }}>
-              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--n-strongest)' }}>{role.label}</span>
-              <span style={{ fontSize: 10, color: 'var(--n-muted)' }}>{(roles[role.id] || []).length}</span>
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, minHeight: 24 }}>
-              {(roles[role.id] || []).length === 0 ? (
-                <span style={{ fontSize: 11, color: 'var(--n-muted)' }}>None</span>
+        {ROLES.map((role) => {
+          const people = roles[role.id] || [];
+          const defaultId = people.length === 1 ? people[0].accountId : roles.defaults[role.id];
+          const needsDefault = people.length > 1 && !defaultId;
+          return (
+            <div
+              key={role.id}
+              style={{
+                padding: 10,
+                border: `1px solid ${needsDefault ? 'var(--warning)' : 'var(--n-border)'}`,
+                borderRadius: 'var(--r-card)',
+                background: 'var(--n-app-bg)',
+                minWidth: 0,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 4 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--n-strongest)' }}>{role.label}</span>
+                <span style={{ fontSize: 10, color: 'var(--n-muted)' }}>{people.length}</span>
+              </div>
+              {role.hint ? (
+                <div style={{ fontSize: 10, color: 'var(--n-muted)', marginBottom: 8 }}>{role.hint}</div>
               ) : (
-                (roles[role.id] || []).map((p) => (
-                  <PersonChip
-                    key={p.accountId}
-                    person={p}
-                    onRemove={disabled ? undefined : () => removePerson(role.id, p.accountId)}
-                  />
-                ))
+                <div style={{ marginBottom: 8 }} />
               )}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, minHeight: 24 }}>
+                {people.length === 0 ? (
+                  <span style={{ fontSize: 11, color: 'var(--n-muted)' }}>None</span>
+                ) : (
+                  people.map((p) => (
+                    <PersonChip
+                      key={p.accountId}
+                      person={p}
+                      isDefault={p.accountId === defaultId}
+                      canSetDefault={!disabled && people.length > 1}
+                      onSetDefault={() => setDefault(role.id, p.accountId)}
+                      onRemove={disabled ? undefined : () => removePerson(role.id, p.accountId)}
+                    />
+                  ))
+                )}
+              </div>
+              {needsDefault ? (
+                <div style={{ fontSize: 10, color: 'var(--warning)', marginTop: 8 }}>
+                  Pick a default {role.label} — tickets won't auto-assign until one is set.
+                </div>
+              ) : null}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {!disabled ? (

@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import styles from '../layout/AppShell.module.css';
-import { useApi, postJson } from '../lib/api';
+import { useApi, getJson, postJson } from '../lib/api';
 import { useRegisterRefresh } from '../lib/useRegisterRefresh';
 import { StateBadge } from './Badge';
 import CustomSelect from './CustomSelect';
@@ -133,6 +133,255 @@ function LinkPrForm({ ticketKey, ticket, pulls, onLinked }) {
         </button>
       </div>
       {error && <div style={{ fontSize: 11, color: 'var(--danger)' }}>{error}</div>}
+    </div>
+  );
+}
+
+const ROLE_QUICK_LABELS = { de: 'DE', qa: 'QA', da: 'DA', cdl: 'CDL' };
+
+function TicketAssignee({ ticket, ticketKey, onAssigned }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const debounceRef = useRef(null);
+  const projectKey = ticket.repo?.jiraProjectKey || null;
+  const teamRoles = ticket.repo?.teamRoles;
+
+  const quickPicks = useMemo(() => {
+    const seen = new Set();
+    const picks = [];
+    for (const role of ['qa', 'de', 'da', 'cdl']) {
+      for (const person of teamRoles?.[role] || []) {
+        if (seen.has(person.accountId)) continue;
+        seen.add(person.accountId);
+        picks.push({ ...person, role });
+      }
+    }
+    return picks;
+  }, [teamRoles]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    const q = query.trim();
+    if (q.length < 2) {
+      setResults([]);
+      setSearching(false);
+      return undefined;
+    }
+    setSearching(true);
+    debounceRef.current = setTimeout(() => {
+      const params = new URLSearchParams({ q });
+      if (projectKey) params.set('project', projectKey);
+      getJson(`/jira/users?${params}`)
+        .then((data) => setResults(data.users || []))
+        .catch((err) => {
+          setResults([]);
+          setError(err.message);
+        })
+        .finally(() => setSearching(false));
+    }, 250);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [open, query, projectKey]);
+
+  async function assign(person) {
+    setSaving(true);
+    setError(null);
+    try {
+      await postJson(`/tickets/${ticketKey}/assignee`, {
+        accountId: person.accountId,
+        displayName: person.displayName,
+        avatarUrl: person.avatarUrl || null,
+      });
+      setOpen(false);
+      setQuery('');
+      setResults([]);
+      await onAssigned();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const searchRef = useRef(null);
+  const popoverRef = useRef(null);
+
+  useEffect(() => {
+    if (open) searchRef.current?.focus();
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    function onDocMouseDown(e) {
+      if (popoverRef.current && !popoverRef.current.contains(e.target)) {
+        setOpen(false);
+        setQuery('');
+        setResults([]);
+        setError(null);
+      }
+    }
+    function onKey(e) {
+      if (e.key === 'Escape') {
+        setOpen(false);
+        setQuery('');
+        setResults([]);
+        setError(null);
+      }
+    }
+    document.addEventListener('mousedown', onDocMouseDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDocMouseDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  function personRow(person, extra) {
+    return (
+      <button
+        key={person.accountId}
+        type="button"
+        disabled={saving}
+        onClick={() => assign(person)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          width: '100%',
+          padding: '7px 8px',
+          border: 'none',
+          background: 'transparent',
+          cursor: saving ? 'default' : 'pointer',
+          textAlign: 'left',
+          font: 'inherit',
+          color: 'inherit',
+        }}
+      >
+        {person.avatarUrl ? (
+          <img src={person.avatarUrl} alt="" width={18} height={18} style={{ borderRadius: '50%', flexShrink: 0 }} />
+        ) : (
+          <span
+            style={{
+              width: 18,
+              height: 18,
+              borderRadius: '50%',
+              background: 'var(--n-fill-subtle)',
+              flexShrink: 0,
+            }}
+          />
+        )}
+        <span className="truncate" style={{ fontSize: 12, color: 'var(--n-strongest)', flex: 1, minWidth: 0 }}>
+          {person.displayName}
+        </span>
+        {extra}
+      </button>
+    );
+  }
+
+  return (
+    <div ref={popoverRef}>
+      <button
+        type="button"
+        onClick={() => {
+          setOpen((v) => !v);
+          setError(null);
+        }}
+        title="Change assignee"
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
+          maxWidth: '100%',
+          margin: 0,
+          padding: '2px 6px 2px 2px',
+          marginLeft: -2,
+          border: 'none',
+          borderRadius: 12,
+          background: open ? 'var(--n-fill-subtle)' : 'transparent',
+          cursor: 'pointer',
+          font: 'inherit',
+          color: 'inherit',
+        }}
+      >
+        {ticket.assignee?.avatarUrl ? (
+          <img src={ticket.assignee.avatarUrl} alt="" width={16} height={16} style={{ borderRadius: '50%', flexShrink: 0 }} />
+        ) : (
+          <span
+            style={{
+              width: 16,
+              height: 16,
+              borderRadius: '50%',
+              background: 'var(--n-fill-subtle)',
+              flexShrink: 0,
+            }}
+          />
+        )}
+        <span className="truncate" style={{ fontSize: 12, color: 'var(--n-body)' }}>
+          {ticket.assignee?.name || 'Unassigned'}
+        </span>
+      </button>
+      {open ? (
+        <div
+          style={{
+            marginTop: 6,
+            width: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 4,
+            padding: 6,
+            border: '1px solid var(--n-border)',
+            borderRadius: 'var(--r-card)',
+            background: 'var(--n-app-bg)',
+          }}
+        >
+          <input
+            ref={searchRef}
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={projectKey ? `Search ${projectKey}…` : 'Search Jira users…'}
+            disabled={saving}
+            style={{
+              width: '100%',
+              height: 28,
+              padding: '0 8px',
+              border: '1px solid var(--n-border)',
+              borderRadius: 'var(--r-input)',
+              background: 'var(--n-app-bg)',
+              color: 'var(--n-body)',
+              fontSize: 12,
+            }}
+          />
+          <div style={{ maxHeight: 180, overflowY: 'auto' }}>
+            {query.trim().length < 2 && quickPicks.length > 0
+              ? quickPicks.map((p) =>
+                  personRow(p, (
+                    <span style={{ fontSize: 9, color: 'var(--n-muted)', letterSpacing: '0.04em' }}>
+                      {ROLE_QUICK_LABELS[p.role]}
+                    </span>
+                  ))
+                )
+              : null}
+            {query.trim().length < 2 && quickPicks.length === 0 ? (
+              <div style={{ padding: '8px 6px', fontSize: 11, color: 'var(--n-muted)' }}>
+                Type a name to search Jira
+              </div>
+            ) : null}
+            {searching ? <div style={{ padding: '8px 6px', fontSize: 11, color: 'var(--n-muted)' }}>Searching…</div> : null}
+            {query.trim().length >= 2 && !searching && results.length === 0 ? (
+              <div style={{ padding: '8px 6px', fontSize: 11, color: 'var(--n-muted)' }}>No matching users</div>
+            ) : null}
+            {results.map((u) => personRow(u))}
+          </div>
+          {error ? <div style={{ padding: '0 6px 4px', fontSize: 11, color: 'var(--danger)' }}>{error}</div> : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -369,7 +618,7 @@ export default function TicketDrawer({ ticketKey, onClose }) {
               </div>
               <div>
                 <div style={{ fontSize: 10, color: 'var(--n-muted)' }}>Assignee</div>
-                <div style={{ fontSize: 12, color: 'var(--n-body)' }}>{ticket.assignee?.name || 'Unassigned'}</div>
+                <TicketAssignee ticket={ticket} ticketKey={ticketKey} onAssigned={refreshTicket} />
               </div>
               <div>
                 <div style={{ fontSize: 10, color: 'var(--n-muted)' }}>Sprint</div>

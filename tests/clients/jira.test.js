@@ -120,6 +120,23 @@ describe('JiraClient', () => {
     expect(result).toEqual({ transitioned: true });
   });
 
+  it('assign puts the accountId onto the issue', async () => {
+    nock(BASE)
+      .put('/rest/api/3/issue/PROJ-1/assignee', { accountId: 'q1' })
+      .reply(204);
+
+    const result = await client.assign('PROJ-1', 'q1');
+    expect(result).toEqual({ assigned: true, accountId: 'q1' });
+  });
+
+  it('tryAssign swallows errors and reports them without throwing', async () => {
+    nock(BASE).put('/rest/api/3/issue/PROJ-1/assignee').reply(500, { errorMessages: ['boom'] });
+
+    const result = await client.tryAssign('PROJ-1', 'q1');
+    expect(result.assigned).toBe(false);
+    expect(result.reason).toBe('error');
+  });
+
   it('reports transition-not-available when the named transition does not exist', async () => {
     nock(BASE).get('/rest/api/3/issue/PROJ-5/transitions').reply(200, { transitions: [] });
     const result = await client.transition('PROJ-5', 'Needs Attention');

@@ -109,4 +109,42 @@ describe('toDevelop handler', () => {
     expect(deps.github.mergePr).not.toHaveBeenCalled();
     expect(deps.github.deleteRef).not.toHaveBeenCalled();
   });
+
+  it('assigns the repo default DE after a production PR is opened', async () => {
+    const deps = baseDeps({
+      teamRoles: {
+        de: [
+          { accountId: 'a1', displayName: 'Ada', avatarUrl: null },
+          { accountId: 'a2', displayName: 'Bob', avatarUrl: null },
+        ],
+        qa: [],
+        da: [],
+        defaults: { de: 'a2', qa: null, da: null },
+      },
+    });
+    deps.jira.tryAssign = vi.fn().mockResolvedValue({ assigned: true });
+
+    await toDevelop(deps);
+
+    expect(deps.jira.tryAssign).toHaveBeenCalledWith('PROJ-1', 'a2');
+    expect(deps.ticketsRepo.get('PROJ-1').assignee_name).toBe('Bob');
+  });
+
+  it('does not assign DE when no production PR can be opened', async () => {
+    const deps = baseDeps({
+      teamRoles: {
+        de: [{ accountId: 'a1', displayName: 'Ada', avatarUrl: null }],
+        qa: [],
+        da: [],
+        defaults: { de: 'a1', qa: null, da: null },
+      },
+    });
+    deps.jira.tryAssign = vi.fn().mockResolvedValue({ assigned: true });
+    deps.ticketMatcher.findOpenPrForTicket = vi.fn().mockResolvedValue(null);
+    deps.ticketMatcher.findBranchForTicket = vi.fn().mockResolvedValue(null);
+
+    await toDevelop(deps);
+
+    expect(deps.jira.tryAssign).not.toHaveBeenCalled();
+  });
 });

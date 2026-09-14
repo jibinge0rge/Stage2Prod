@@ -25,6 +25,7 @@ function createStagingRouter({ reposRepo, repoResolver, jira, ticketsRepo, event
         productionBranch: repoConfig.productionBranch,
         stagingBranch: repoConfig.stagingBranch,
         statusMap: repoConfig.effectiveStatusHandlerMap || repoConfig.statusHandlerMap,
+        teamRoles: repoConfig.teamRoles,
         remergeInQa: !!remergeInQa,
         correlationId,
         log,

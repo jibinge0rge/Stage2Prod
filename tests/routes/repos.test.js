@@ -173,7 +173,7 @@ describe('PATCH /api/repos/:owner/:name', () => {
     expect(res.body.repo.effectiveStatusHandlerMap.in_progress.jiraStatus).toBe('Doing');
   });
 
-  it('saves DE/QA/DA team roles per repo', async () => {
+  it('saves DE/QA/DA/CDL team roles per repo', async () => {
     const ctx = buildTestCtx();
     ctx.reposRepo.add('acme', 'widgets', { jiraProjectKey: 'VIM' });
     const app = createApp(ctx);
@@ -186,6 +186,7 @@ describe('PATCH /api/repos/:owner/:name', () => {
           de: [{ accountId: 'a1', displayName: 'Ada', avatarUrl: 'https://x/a.png' }],
           qa: [{ accountId: 'q1', displayName: 'Quinn' }],
           da: [],
+          cdl: [{ accountId: 'c1', displayName: 'Cara' }],
         },
       });
 
@@ -194,6 +195,8 @@ describe('PATCH /api/repos/:owner/:name', () => {
       de: [{ accountId: 'a1', displayName: 'Ada', avatarUrl: 'https://x/a.png' }],
       qa: [{ accountId: 'q1', displayName: 'Quinn', avatarUrl: null }],
       da: [],
+      cdl: [{ accountId: 'c1', displayName: 'Cara', avatarUrl: null }],
+      defaults: { de: 'a1', qa: 'q1', da: null, cdl: 'c1' },
     });
     expect(ctx.reposRepo.get('acme', 'widgets').teamRoles.de[0].displayName).toBe('Ada');
   });
@@ -209,6 +212,29 @@ describe('PATCH /api/repos/:owner/:name', () => {
       .send({ teamRoles: { pm: [] } });
 
     expect(res.status).toBe(400);
+  });
+
+  it('saves a default QA when several QA are configured', async () => {
+    const ctx = buildTestCtx();
+    ctx.reposRepo.add('acme', 'widgets');
+    const app = createApp(ctx);
+
+    const res = await request(app)
+      .patch('/api/repos/acme/widgets')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send({
+        teamRoles: {
+          qa: [
+            { accountId: 'q1', displayName: 'Quinn' },
+            { accountId: 'q2', displayName: 'Sam' },
+          ],
+          defaults: { qa: 'q2' },
+        },
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.repo.teamRoles.defaults.qa).toBe('q2');
+    expect(ctx.reposRepo.get('acme', 'widgets').teamRoles.defaults.qa).toBe('q2');
   });
 
   it('persists Also match aliases on the status map', async () => {

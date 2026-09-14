@@ -182,6 +182,7 @@ class Poller {
         productionBranch: repoConfig.productionBranch,
         stagingBranch: repoConfig.stagingBranch,
         statusMap: repoConfig.effectiveStatusHandlerMap || repoConfig.statusHandlerMap,
+        teamRoles: repoConfig.teamRoles,
         github: this.repoResolver.getClient(repoOwner, repoName),
         jira: this.jira,
         ticketsRepo: this.ticketsRepo,

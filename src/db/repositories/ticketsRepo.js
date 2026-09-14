@@ -56,6 +56,9 @@ function createTicketsRepo(db) {
   const setRepoStmt = db.prepare(
     'UPDATE tickets SET repo_owner = ?, repo_name = ?, updated_at = ? WHERE ticket_key = ?'
   );
+  const setAssigneeStmt = db.prepare(
+    'UPDATE tickets SET assignee_name = ?, assignee_avatar_url = ?, updated_at = ? WHERE ticket_key = ?'
+  );
   // Plain SET, not COALESCE — unlike setGithubFacts (used for "here's a
   // new/updated fact"), this is for "the PR this ticket pointed at is
   // gone, stop showing it as if it still exists" (e.g. a closed/deleted
@@ -63,6 +66,14 @@ function createTicketsRepo(db) {
   // it's still useful context (the name to recreate), not stale/wrong.
   const clearGithubFactsStmt = db.prepare(`
     UPDATE tickets SET pr_number = NULL, pr_state = NULL, check_status = NULL, head_sha = NULL, updated_at = ?
+    WHERE ticket_key = ?
+  `);
+  // Feature branch (and PR) are gone on GitHub — wipe the local git
+  // pointer including branch_name so Create branch is offered again.
+  const clearFeatureWorkStmt = db.prepare(`
+    UPDATE tickets SET
+      branch_name = NULL, pr_number = NULL, pr_state = NULL,
+      check_status = NULL, head_sha = NULL, pipeline_state = ?, updated_at = ?
     WHERE ticket_key = ?
   `);
 
@@ -140,8 +151,14 @@ function createTicketsRepo(db) {
     setRepo(ticketKey, owner, name) {
       setRepoStmt.run(owner, name, new Date().toISOString(), ticketKey);
     },
+    setAssignee(ticketKey, { name = null, avatarUrl = null } = {}) {
+      setAssigneeStmt.run(name, avatarUrl, new Date().toISOString(), ticketKey);
+    },
     clearGithubFacts(ticketKey) {
       clearGithubFactsStmt.run(new Date().toISOString(), ticketKey);
+    },
+    clearFeatureWork(ticketKey) {
+      clearFeatureWorkStmt.run('unmerged', new Date().toISOString(), ticketKey);
     },
   };
 }

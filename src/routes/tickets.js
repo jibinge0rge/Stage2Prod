@@ -9,6 +9,8 @@ const { compareBranchToTargets } = require('../services/branchDiff');
 const { linkTicketPr, listLinkablePulls, LinkNotReadyError } = require('../services/linkTicketPr');
 const { reconcileOpenPrBases } = require('../services/reclassifyRepoTickets');
 const { syncPipelineWithPrMergeability, reconcileMergeConflicts } = require('../services/syncPrMergeability');
+const { reconcileGoneBranch } = require('../services/reconcileGoneBranch');
+const { emptyTeamRoles, normalizePerson } = require('../lib/teamRoles');
 
 function rowToApi(row, reposRepo) {
   let repo = null;
@@ -19,6 +21,8 @@ function rowToApi(row, reposRepo) {
       name: row.repo_name,
       productionBranch: repoConfig?.productionBranch ?? 'develop',
       stagingBranch: repoConfig?.stagingBranch ?? 'staging',
+      jiraProjectKey: repoConfig?.jiraProjectKey ?? null,
+      teamRoles: repoConfig?.teamRoles ?? emptyTeamRoles(),
     };
   }
   return {
@@ -89,10 +93,21 @@ function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller,
   });
 
   router.get('/tickets/:key', async (req, res, next) => {
-    const row = ticketsRepo.get(req.params.key);
+    let row = ticketsRepo.get(req.params.key);
     if (!row) return res.status(404).json({ error: 'not_found', message: `no ticket ${req.params.key}` });
     try {
       await reconcileOpenPrBases([row], { ticketsRepo, reposRepo, repoResolver, log: logger });
+      row = ticketsRepo.get(req.params.key);
+      await reconcileGoneBranch({
+        row,
+        ticketsRepo,
+        eventsRepo,
+        reposRepo,
+        repoResolver,
+        jira,
+        log: logger,
+      });
+      row = ticketsRepo.get(req.params.key);
     } catch (err) {
       return next(err);
     }
@@ -219,6 +234,27 @@ function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller,
     try {
       await jira.addComment(key, text);
       return res.status(201).json({ commented: true });
+    } catch (err) {
+      return next(err);
+    }
+  });
+
+  router.post('/tickets/:key/assignee', requireApiToken, async (req, res, next) => {
+    const { key } = req.params;
+    const row = ticketsRepo.get(key);
+    if (!row) return res.status(404).json({ error: 'not_found', message: `no ticket ${key}` });
+    const person = normalizePerson(req.body || {});
+    if (!person) {
+      return res.status(400).json({ error: 'bad_request', message: '"accountId" is required' });
+    }
+    try {
+      if (typeof jira.assign !== 'function') {
+        return res.status(503).json({ error: 'unavailable', message: 'Jira client is not configured' });
+      }
+      await jira.assign(key, person.accountId);
+      ticketsRepo.setAssignee(key, { name: person.displayName, avatarUrl: person.avatarUrl });
+      const updated = ticketsRepo.get(key);
+      return res.json(rowToApi(updated, reposRepo));
     } catch (err) {
       return next(err);
     }

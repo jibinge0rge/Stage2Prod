@@ -11,7 +11,7 @@ class HttpError extends Error {
   }
 }
 
-const MUTATING_METHODS = ['addComment', 'transition'];
+const MUTATING_METHODS = ['addComment', 'transition', 'assign'];
 
 class JiraClient {
   constructor({ host, email, apiToken }) {
@@ -198,6 +198,27 @@ class JiraClient {
       return { transitioned: false, reason: 'error', error: err.message };
     }
   }
+
+  /**
+   * Jira Cloud assignee write. `accountId: null` unassigns.
+   * PUT /rest/api/3/issue/{issueIdOrKey}/assignee
+   */
+  async assign(ticketKey, accountId) {
+    const id = accountId == null || accountId === '' ? null : String(accountId);
+    await this._withJiraBackoff(() =>
+      this._request('PUT', `/rest/api/3/issue/${ticketKey}/assignee`, { accountId: id })
+    );
+    return { assigned: true, accountId: id };
+  }
+
+  async tryAssign(ticketKey, accountId) {
+    try {
+      return await this.assign(ticketKey, accountId);
+    } catch (err) {
+      logger.warn({ ticketKey, accountId, err: err.message }, 'best-effort assign failed, ignoring');
+      return { assigned: false, reason: 'error', error: err.message };
+    }
+  }
 }
 
 function createJiraClient(config, dryRun = config.DRY_RUN) {
@@ -205,6 +226,7 @@ function createJiraClient(config, dryRun = config.DRY_RUN) {
   const synthetic = {
     addComment: () => ({ commented: true }),
     transition: () => ({ transitioned: true }),
+    assign: () => ({ assigned: true }),
   };
   return wrapWithDryRun(client, MUTATING_METHODS, synthetic, dryRun);
 }

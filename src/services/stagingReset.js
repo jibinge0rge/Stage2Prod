@@ -61,6 +61,7 @@ async function resetStaging({
   productionBranch,
   stagingBranch,
   statusMap,
+  teamRoles,
   remergeInQa,
   correlationId,
   log,
@@ -204,6 +205,7 @@ async function resetStaging({
           eventsRepo,
           ticketMatcher,
           statusMap,
+          teamRoles,
         });
         remerge.results.push({ ticketKey: t.ticket_key, outcome: result.outcome });
       }
