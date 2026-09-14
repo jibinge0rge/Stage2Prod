@@ -15,11 +15,11 @@ function defaultCutBranchName(now = new Date()) {
   return `release-${y}-${m}-${d}`;
 }
 
-/** Production cuts are branches whose names contain "release" (e.g. release-4.3.0-v1). */
+/** Production cuts are branches whose names start with "release" (e.g. release-4.3.0-v1). */
 function isReleaseCutName(branchName, stagingBranch) {
   if (!branchName) return false;
   if (stagingBranch && branchName === stagingBranch) return false;
-  return /release/i.test(String(branchName));
+  return /^release/i.test(String(branchName));
 }
 
 function sortReleaseCutsNewestFirst(a, b) {
@@ -34,7 +34,7 @@ function assertValidCutBranchName(name, stagingBranch) {
     throw new CutNotReadyError('branch name is required');
   }
   if (!isReleaseCutName(trimmed, stagingBranch)) {
-    throw new CutNotReadyError('production cut branch name must include "release" (e.g. release-4.3.0-v1)');
+    throw new CutNotReadyError('production cut branch name must start with "release" (e.g. release-4.3.0-v1)');
   }
   if (trimmed.length > 200) {
     throw new CutNotReadyError('branch name is too long (max 200 characters)');
@@ -83,27 +83,30 @@ function ticketsFromCommits(commits, { ticketsRepo, owner, name }) {
   for (const commit of commits || []) {
     const text = commitText(commit);
     for (const key of ticketKeysInText(text)) {
-      if (!found.has(key)) found.set(key, true);
+      const row = ticketsRepo.get(key);
+      if (row && !found.has(key)) found.set(key, row);
     }
     for (const row of repoTickets) {
       if (found.has(row.ticket_key)) continue;
       if (text.includes(row.ticket_key) || (row.branch_name && text.includes(row.branch_name))) {
-        found.set(row.ticket_key, true);
+        found.set(row.ticket_key, row);
       }
     }
   }
 
-  return [...found.keys()].map((key) => {
-    const row = ticketsRepo.get(key);
-    return {
-      key,
-      summary: row?.summary || null,
-      pipelineState: row?.pipeline_state || null,
-    };
-  });
+  return [...found.values()].map((row) => ({
+    key: row.ticket_key,
+    summary: row.summary || null,
+    pipelineState: row.pipeline_state || null,
+  }));
 }
 
-function summarizeCut(cut, { isLatest = false } = {}) {
+function trackedTickets(tickets, ticketsRepo) {
+  return (tickets || []).filter((t) => t?.key && ticketsRepo?.get?.(t.key));
+}
+
+function summarizeCut(cut, { isLatest = false, ticketsRepo } = {}) {
+  const tickets = trackedTickets(cut.tickets, ticketsRepo);
   return {
     id: cut.id,
     branchName: cut.branchName,
@@ -111,14 +114,14 @@ function summarizeCut(cut, { isLatest = false } = {}) {
     stagingSha: cut.stagingSha,
     previousSha: cut.previousSha,
     createdAt: cut.createdAt,
-    ticketCount: (cut.tickets || []).length,
+    ticketCount: tickets.length,
     isLatest,
   };
 }
 
 function hydrateCut(cut, ticketsRepo) {
-  const tickets = (cut.tickets || []).map((t) => {
-    const row = ticketsRepo?.get?.(t.key);
+  const tickets = trackedTickets(cut.tickets, ticketsRepo).map((t) => {
+    const row = ticketsRepo.get(t.key);
     return {
       key: t.key,
       summary: row?.summary || t.summary || null,
@@ -318,12 +321,14 @@ async function createProductionCut({
   return run();
 }
 
-function listCutsForRepo(owner, name, cutsRepo) {
-  return listedReleaseCuts(owner, name, cutsRepo).map((cut, i) => summarizeCut(cut, { isLatest: i === 0 }));
+function listCutsForRepo(owner, name, cutsRepo, ticketsRepo) {
+  return listedReleaseCuts(owner, name, cutsRepo).map((cut, i) =>
+    summarizeCut(cut, { isLatest: i === 0, ticketsRepo })
+  );
 }
 
 /**
- * Treats every GitHub branch whose name contains "release" as a production
+ * Treats every GitHub branch whose name starts with "release" as a production
  * cut (except the staging branch). Records them so Overview can list
  * newest-first and open a ticket changelog.
  */
@@ -337,14 +342,14 @@ async function syncReleaseCutsFromGithub({
 }) {
   if (!cutsRepo) return [];
   if (typeof github?.listBranches !== 'function') {
-    return listCutsForRepo(owner, name, cutsRepo);
+    return listCutsForRepo(owner, name, cutsRepo, ticketsRepo);
   }
 
   let branches = [];
   try {
     branches = await github.listBranches();
   } catch {
-    return listCutsForRepo(owner, name, cutsRepo);
+    return listCutsForRepo(owner, name, cutsRepo, ticketsRepo);
   }
 
   const releaseBranches = (branches || [])
@@ -357,7 +362,8 @@ async function syncReleaseCutsFromGithub({
     const sha = branch.commit?.sha || (await shaOrNull(github, branch.name));
     if (!sha) continue;
     const existing = cutsRepo.getByBranch(owner, name, branch.name);
-    const needsTickets = !existing || existing.sha !== sha || !(existing.tickets || []).length;
+    const storedUntracked = (existing?.tickets || []).some((t) => !ticketsRepo?.get?.(t.key));
+    const needsTickets = !existing || existing.sha !== sha || !(existing.tickets || []).length || storedUntracked;
     let tickets = existing?.tickets || [];
     if (needsTickets) {
       let commits = [];
@@ -376,13 +382,13 @@ async function syncReleaseCutsFromGithub({
         previousSha,
         tickets,
       });
-    } else if (existing.sha !== sha || (!(existing.tickets || []).length && tickets.length)) {
+    } else if (existing.sha !== sha || storedUntracked || (!(existing.tickets || []).length && tickets.length)) {
       cutsRepo.update(existing.id, { sha, previousSha, tickets });
     }
     previousSha = sha;
   }
 
-  return listCutsForRepo(owner, name, cutsRepo);
+  return listCutsForRepo(owner, name, cutsRepo, ticketsRepo);
 }
 
 module.exports = {

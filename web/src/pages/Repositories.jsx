@@ -16,7 +16,7 @@ function guessStagingBranch(branches) {
     const idx = lower.indexOf(guess);
     if (idx !== -1) return branches[idx];
   }
-  return branches.find((b) => !/release/i.test(b)) || branches[0] || 'develop';
+  return branches.find((b) => !/^release/i.test(b)) || branches[0] || 'develop';
 }
 
 /**

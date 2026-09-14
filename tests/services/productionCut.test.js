@@ -75,6 +75,23 @@ describe('ticketsFromCommits', () => {
     );
     expect(tickets).toEqual([expect.objectContaining({ key: 'PROJ-1', summary: 'Login' })]);
   });
+
+  it('ignores Jira-like keys that are not tracked tickets', () => {
+    const { ticketsRepo } = createTestDb();
+    seedTicket(ticketsRepo, {
+      key: 'PROJ-1',
+      summary: 'Login',
+      jiraStatus: 'In QA',
+      pipelineState: 'staging',
+      repoOwner: 'acme',
+      repoName: 'widgets',
+    });
+    const tickets = ticketsFromCommits(
+      [{ commit: { message: 'PR-084 and DE-024 and PROJ-1' } }],
+      { ticketsRepo, owner: 'acme', name: 'widgets' }
+    );
+    expect(tickets.map((t) => t.key)).toEqual(['PROJ-1']);
+  });
 });
 
 describe('changelogFromStaging', () => {
@@ -99,7 +116,7 @@ describe('changelogFromStaging', () => {
     expect(deps.github.listCommitsAhead).toHaveBeenCalledWith('oldsha', 'qa');
   });
 
-  it('ignores a stored cut whose name does not include release', async () => {
+  it('ignores a stored cut whose name does not start with release', async () => {
     const deps = baseDeps();
     deps.cutsRepo.insert({
       repoOwner: 'acme',
@@ -143,9 +160,11 @@ describe('createProductionCut', () => {
     expect(deps.github.createRef).not.toHaveBeenCalled();
   });
 
-  it('rejects a name that does not include release', async () => {
+  it('rejects a name that does not start with release', async () => {
     const deps = baseDeps();
-    await expect(createProductionCut({ ...deps, branchName: 'prod-x' })).rejects.toBeInstanceOf(CutNotReadyError);
+    await expect(createProductionCut({ ...deps, branchName: 'akash-update-release4.4' })).rejects.toBeInstanceOf(
+      CutNotReadyError
+    );
     expect(deps.github.createRef).not.toHaveBeenCalled();
   });
 
@@ -157,13 +176,14 @@ describe('createProductionCut', () => {
 });
 
 describe('syncReleaseCutsFromGithub', () => {
-  it('records GitHub branches whose names include release, newest first', async () => {
+  it('records GitHub branches whose names start with release, newest first', async () => {
     const { syncReleaseCutsFromGithub } = require('../../src/services/productionCut');
     const deps = baseDeps();
     deps.github.listBranches = vi.fn().mockResolvedValue([
       { name: 'develop', commit: { sha: 's' } },
       { name: 'release-4.2.0', commit: { sha: 'old' } },
       { name: 'release-4.3.0-v1', commit: { sha: 'new' } },
+      { name: 'akash-update-release4.4', commit: { sha: 'akash' } },
       { name: 'feat/PROJ-1', commit: { sha: 'f' } },
     ]);
     deps.github.listCommitsAhead = vi.fn().mockResolvedValue([
@@ -182,5 +202,39 @@ describe('syncReleaseCutsFromGithub', () => {
     expect(cuts.map((c) => c.branchName)).toEqual(['release-4.3.0-v1', 'release-4.2.0']);
     expect(cuts[0].isLatest).toBe(true);
     expect(cuts[0].ticketCount).toBe(1);
+    expect(deps.cutsRepo.getByBranch('acme', 'widgets', 'akash-update-release4.4')).toBeNull();
+  });
+
+  it('drops stored keys that are not tracked tickets', async () => {
+    const { syncReleaseCutsFromGithub, hydrateCut } = require('../../src/services/productionCut');
+    const deps = baseDeps();
+    const stored = deps.cutsRepo.insert({
+      repoOwner: 'acme',
+      repoName: 'widgets',
+      branchName: 'release-4.3.0-v1',
+      sha: 'new',
+      stagingSha: 'new',
+      tickets: [
+        { key: 'PR-084', summary: null },
+        { key: 'PROJ-1', summary: 'Login' },
+      ],
+    });
+    deps.github.listBranches = vi.fn().mockResolvedValue([
+      { name: 'release-4.3.0-v1', commit: { sha: 'new' } },
+    ]);
+    deps.github.listCommitsAhead = vi.fn().mockResolvedValue([]);
+
+    const cuts = await syncReleaseCutsFromGithub({
+      github: deps.github,
+      cutsRepo: deps.cutsRepo,
+      ticketsRepo: deps.ticketsRepo,
+      owner: 'acme',
+      name: 'widgets',
+      stagingBranch: 'qa',
+    });
+    expect(cuts[0].ticketCount).toBe(0);
+
+    const hydrated = hydrateCut(deps.cutsRepo.get(stored.id), deps.ticketsRepo);
+    expect(hydrated.tickets.map((t) => t.key)).toEqual([]);
   });
 });

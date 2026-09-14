@@ -89,12 +89,12 @@ export default function CutModal() {
         </div>
         <div className={styles.modalBody}>
           <p style={{ fontSize: 12, color: 'var(--n-muted)', margin: 0 }}>
-            Creates a new branch at the current {stagingLabel} SHA. The name must include{' '}
+            Creates a new branch at the current {stagingLabel} SHA. The name must start with{' '}
             <span className="mono">release</span> (for example <span className="mono">release-4.3.0-v1</span>).
             Tickets listed below are what landed on staging since the last cut.
           </p>
           <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 10, color: 'var(--n-muted)' }}>
-            Branch name (must include “release”)
+            Branch name (must start with “release”)
             <input
               className="mono"
               value={name}

@@ -67,7 +67,7 @@ describe('GET /api/repos/:owner/:name/cuts', () => {
       sha: 'bbb',
       stagingSha: 'bbb',
       createdAt: '2026-09-14T00:00:00.000Z',
-      tickets: [{ key: 'PROJ-2', summary: 'Later' }],
+      tickets: [{ key: 'PROJ-1', summary: 'Login' }],
     });
     const app = createApp(ctx);
     const res = await request(app).get('/api/repos/acme/widgets/cuts');
