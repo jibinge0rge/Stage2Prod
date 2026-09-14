@@ -262,13 +262,14 @@ function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller,
 
   router.post('/tickets/:key/branch', requireApiToken, async (req, res, next) => {
     const { key } = req.params;
-    const { name } = req.body || {};
+    const { name, from } = req.body || {};
     if (!ticketsRepo.get(key)) return res.status(404).json({ error: 'not_found', message: `no ticket ${key}` });
     const correlationId = newCorrelationId();
     try {
       const result = await createBranchFromProduction({
         ticketKey: key,
         branchName: name,
+        from,
         ticketsRepo,
         eventsRepo,
         reposRepo,

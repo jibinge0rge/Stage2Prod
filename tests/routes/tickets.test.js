@@ -608,6 +608,62 @@ describe('POST /api/tickets/:key/branch', () => {
     expect(ctx.jira.tryTransition).toHaveBeenCalledWith('PROJ-1', 'In Progress');
   });
 
+  it('creates a branch from staging when from is staging', async () => {
+    const ctx = buildTestCtx();
+    ctx.reposRepo.add('acme', 'widgets', { productionBranch: 'main', stagingBranch: 'qa' });
+    ctx.ticketsRepo.upsert({
+      key: 'PROJ-1',
+      summary: 'Fix login',
+      jiraStatus: 'In Development',
+      pipelineState: 'unmerged',
+      repoOwner: 'acme',
+      repoName: 'widgets',
+    });
+    const github = {
+      getRef: vi.fn(async (branch) => {
+        if (branch === 'qa') return 'stagingsha';
+        const err = new Error('Not Found');
+        err.status = 404;
+        throw err;
+      }),
+      createRef: vi.fn().mockResolvedValue({ sha: 'stagingsha' }),
+    };
+    ctx.repoResolver.getClient = vi.fn(() => github);
+    ctx.repoResolver.matchByProjectKeyOnly = vi.fn(() => null);
+    const app = createApp(ctx);
+
+    const res = await request(app)
+      .post('/api/tickets/PROJ-1/branch')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send({ name: 'feat/PROJ-1-login', from: 'staging' });
+
+    expect(res.status).toBe(201);
+    expect(res.body.branch).toBe('feat/PROJ-1-login');
+    expect(github.createRef).toHaveBeenCalledWith('feat/PROJ-1-login', 'stagingsha');
+  });
+
+  it('400s when from is not production or staging', async () => {
+    const ctx = buildTestCtx();
+    ctx.reposRepo.add('acme', 'widgets', { productionBranch: 'main', stagingBranch: 'qa' });
+    ctx.ticketsRepo.upsert({
+      key: 'PROJ-1',
+      summary: 'Fix login',
+      jiraStatus: 'In Development',
+      pipelineState: 'unmerged',
+      repoOwner: 'acme',
+      repoName: 'widgets',
+    });
+    const app = createApp(ctx);
+
+    const res = await request(app)
+      .post('/api/tickets/PROJ-1/branch')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send({ name: 'feat/PROJ-1-login', from: 'develop' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/production.*staging/i);
+  });
+
   it('400s when the branch name does not contain the ticket key', async () => {
     const ctx = buildTestCtx();
     ctx.reposRepo.add('acme', 'widgets');

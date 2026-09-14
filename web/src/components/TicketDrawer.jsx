@@ -400,6 +400,7 @@ export default function TicketDrawer({ ticketKey, onClose }) {
   const [mergeError, setMergeError] = useState(null);
   const [mergeWarning, setMergeWarning] = useState(null);
   const [branchName, setBranchName] = useState('');
+  const [branchFrom, setBranchFrom] = useState('production');
   const [creatingBranch, setCreatingBranch] = useState(false);
   const [branchError, setBranchError] = useState(null);
   const [openingPr, setOpeningPr] = useState(null); // 'staging' | 'production' | null
@@ -412,6 +413,10 @@ export default function TicketDrawer({ ticketKey, onClose }) {
     setBranchName(ticket.branch || defaultBranchName(ticket.key, ticket.summary));
     setBranchError(null);
   }, [ticket?.key, ticket?.branch, ticket?.summary]);
+
+  useEffect(() => {
+    setBranchFrom('production');
+  }, [ticket?.key]);
 
   const refreshTicket = useCallback(async () => {
     await refresh();
@@ -453,7 +458,7 @@ export default function TicketDrawer({ ticketKey, onClose }) {
     setCreatingBranch(true);
     setBranchError(null);
     try {
-      await postJson(`/tickets/${ticketKey}/branch`, { name: branchName.trim() });
+      await postJson(`/tickets/${ticketKey}/branch`, { name: branchName.trim(), from: branchFrom });
       await refreshTicket();
     } catch (err) {
       setBranchError(err.message);
@@ -533,6 +538,17 @@ export default function TicketDrawer({ ticketKey, onClose }) {
       : null);
   const productionLabel = ticket.repo?.productionBranch ?? 'production';
   const stagingLabel = ticket.repo?.stagingBranch ?? 'staging';
+  const baseLabel = branchFrom === 'staging' ? stagingLabel : productionLabel;
+  const branchFromOptions = [
+    {
+      value: 'production',
+      label: productionLabel === 'production' ? 'production' : `production (${productionLabel})`,
+    },
+    {
+      value: 'staging',
+      label: stagingLabel === 'staging' ? 'staging' : `staging (${stagingLabel})`,
+    },
+  ];
   const state = ticket.pipelineState;
   const hasBranch = Boolean(ticket.branch);
   const canResolveRepo = Boolean(ticket.repo) || (health?.watchedRepos?.length === 1);
@@ -666,14 +682,18 @@ export default function TicketDrawer({ ticketKey, onClose }) {
           <div>
             <div className="eyebrow">Path to production</div>
             <div style={{ fontSize: 11, color: 'var(--n-muted)', marginTop: 4 }}>
-              Branch from {productionLabel} → work → staging (QA) → production
+              Branch → work → staging (QA) → production
             </div>
           </div>
 
           <PathStep
             n="1"
-            title={`Create a branch from ${productionLabel}`}
-            hint={hasBranch ? `Already exists: ${ticket.branch}` : 'Cut a feature branch from production. Jira moves to In Progress.'}
+            title={`Create a branch from ${baseLabel}`}
+            hint={
+              hasBranch
+                ? `Already exists: ${ticket.branch}`
+                : `Cut a feature branch from ${baseLabel}. Jira moves to In Progress.`
+            }
             done={hasBranch}
           >
             <input
@@ -695,13 +715,22 @@ export default function TicketDrawer({ ticketKey, onClose }) {
               }}
             />
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+              <div style={{ flex: '1 1 160px', minWidth: 140, maxWidth: 240 }}>
+                <CustomSelect
+                  value={branchFrom}
+                  options={branchFromOptions}
+                  onChange={setBranchFrom}
+                  disabled={creatingBranch || hasBranch || !canResolveRepo}
+                  title="Create branch from production or staging"
+                />
+              </div>
               <button
                 type="button"
                 className="btn btn-primary"
                 onClick={handleCreateBranch}
                 disabled={creatingBranch || hasBranch || !canResolveRepo || !branchName.trim()}
               >
-                {creatingBranch ? 'Creating…' : hasBranch ? 'Already exists' : `Create from ${productionLabel}`}
+                {creatingBranch ? 'Creating…' : hasBranch ? 'Already exists' : `Create from ${baseLabel}`}
               </button>
             </div>
             {!canResolveRepo && !hasBranch && (

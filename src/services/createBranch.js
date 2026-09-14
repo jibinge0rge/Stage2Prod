@@ -44,13 +44,14 @@ async function shaOrNull(github, branch) {
 }
 
 /**
- * Creates a feature branch from the repo's production branch (or records
- * one that already exists). Never force-updates an existing branch —
- * that would wipe work. Called from POST /api/tickets/:key/branch.
+ * Creates a feature branch from the repo's production branch (default)
+ * or staging branch. Never force-updates an existing branch — that
+ * would wipe work. Called from POST /api/tickets/:key/branch.
  */
 async function createBranchFromProduction({
   ticketKey,
   branchName,
+  from = 'production',
   ticketsRepo,
   eventsRepo,
   reposRepo,
@@ -67,6 +68,11 @@ async function createBranchFromProduction({
     throw err;
   }
 
+  const source = from === undefined || from === null || from === '' ? 'production' : String(from);
+  if (source !== 'production' && source !== 'staging') {
+    throw new BranchNotReadyError('"from" must be "production" or "staging"');
+  }
+
   const repo = resolveRepo({ ticketKey, ticketsRepo, reposRepo, repoResolver });
   if (!repo) {
     throw new BranchNotReadyError(
@@ -80,6 +86,12 @@ async function createBranchFromProduction({
   }
 
   const { productionBranch, stagingBranch } = repoConfig;
+  const baseBranch = source === 'staging' ? stagingBranch : productionBranch;
+  if (!baseBranch) {
+    throw new BranchNotReadyError(
+      `This repo has no ${source} branch configured.`
+    );
+  }
   const name = assertValidBranchName(branchName || defaultBranchName(ticketKey, row.summary), ticketKey);
   if (name === productionBranch || name === stagingBranch) {
     throw new BranchNotReadyError(
@@ -88,10 +100,10 @@ async function createBranchFromProduction({
   }
 
   const github = repoResolver.getClient(repo.owner, repo.name);
-  const productionSha = await shaOrNull(github, productionBranch);
-  if (!productionSha) {
+  const baseSha = await shaOrNull(github, baseBranch);
+  if (!baseSha) {
     throw new BranchNotReadyError(
-      `Production branch "${productionBranch}" was not found in ${repo.owner}/${repo.name}.`
+      `${source === 'staging' ? 'Staging' : 'Production'} branch "${baseBranch}" was not found in ${repo.owner}/${repo.name}.`
     );
   }
 
@@ -99,14 +111,14 @@ async function createBranchFromProduction({
   let sha = await shaOrNull(github, name);
   if (!sha) {
     try {
-      const result = await github.createRef(name, productionSha);
-      sha = result.sha || productionSha;
+      const result = await github.createRef(name, baseSha);
+      sha = result.sha || baseSha;
       created = true;
     } catch (err) {
       // Lost a race with someone else creating the same ref — treat as
       // "already existed" rather than failing the click.
       if (err.status === 422) {
-        sha = (await shaOrNull(github, name)) || productionSha;
+        sha = (await shaOrNull(github, name)) || baseSha;
       } else {
         throw err;
       }
@@ -117,11 +129,10 @@ async function createBranchFromProduction({
 
   if (created) {
     try {
-      await jira.addComment(ticketKey, JIRA_COMMENTS.BRANCH_CREATED(name, productionBranch));
+      await jira.addComment(ticketKey, JIRA_COMMENTS.BRANCH_CREATED(name, baseBranch));
     } catch (err) {
       log?.warn?.({ ticketKey, err: err.message }, 'jira comment after branch create failed; continuing');
     }
-    const repoConfig = reposRepo.get(repo.owner, repo.name);
     await syncJiraStatus({
       jira,
       ticketsRepo,
@@ -131,23 +142,24 @@ async function createBranchFromProduction({
     });
   }
 
+  const sourceLabel = source === 'staging' ? 'staging' : 'production';
   eventsRepo.insertEvent({
     ticketKey,
     trigger,
     action: 'create-branch',
     outcome: OUTCOMES.NOTED,
-    title: created ? 'Created branch from production' : 'Found existing branch',
+    title: created ? `Created branch from ${sourceLabel}` : 'Found existing branch',
     detail: created
-      ? `Created ${name} from ${productionBranch} @ ${String(productionSha).slice(0, 7)}`
+      ? `Created ${name} from ${baseBranch} @ ${String(baseSha).slice(0, 7)}`
       : `${name} already exists on ${repo.owner}/${repo.name} — recorded on the ticket, not overwritten.`,
     correlationId,
-    metadata: { branch: name, sha, from: productionBranch, created },
+    metadata: { branch: name, sha, from: baseBranch, source, created },
     repoOwner: repo.owner,
     repoName: repo.name,
   });
-  log.info({ ticketKey, branch: name, created, sha }, 'branch ensured from production');
+  log.info({ ticketKey, branch: name, created, sha, from: baseBranch, source }, 'branch ensured');
 
-  return { created, branch: name, sha, repo, from: productionBranch };
+  return { created, branch: name, sha, repo, from: baseBranch, source };
 }
 
 module.exports = { createBranchFromProduction, BranchNotReadyError, resolveRepo };

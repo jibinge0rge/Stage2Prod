@@ -120,6 +120,51 @@ describe('createBranchFromProduction', () => {
     expect(deps.repoResolver.matchByProjectKeyOnly).toHaveBeenCalledWith('PROJ-1');
   });
 
+  it('creates a branch from staging when from is staging', async () => {
+    const deps = baseDeps();
+    deps.github.getRef = vi.fn(async (branch) => {
+      if (branch === 'main') return 'prodsha1';
+      if (branch === 'qa') return 'stagingsha';
+      throw notFound();
+    });
+    deps.github.createRef = vi.fn().mockResolvedValue({ sha: 'stagingsha' });
+
+    const result = await createBranchFromProduction({ ...deps, from: 'staging' });
+
+    expect(result).toMatchObject({ created: true, from: 'qa', source: 'staging' });
+    expect(deps.github.createRef).toHaveBeenCalledWith('feat/PROJ-1-harden-oauth-token-refresh', 'stagingsha');
+    expect(deps.jira.addComment).toHaveBeenCalledWith('PROJ-1', expect.stringContaining('qa'));
+
+    const { events } = deps.eventsRepo.list({ ticketKey: 'PROJ-1' });
+    expect(events[0]).toMatchObject({
+      action: 'create-branch',
+      title: 'Created branch from staging',
+    });
+  });
+
+  it('defaults to production when from is omitted', async () => {
+    const deps = baseDeps();
+    const result = await createBranchFromProduction({ ...deps, from: undefined });
+    expect(result.source).toBe('production');
+    expect(deps.github.createRef).toHaveBeenCalledWith('feat/PROJ-1-harden-oauth-token-refresh', 'prodsha1');
+  });
+
+  it('throws BranchNotReadyError for an invalid from value', async () => {
+    const deps = baseDeps();
+    await expect(createBranchFromProduction({ ...deps, from: 'develop' })).rejects.toBeInstanceOf(
+      BranchNotReadyError
+    );
+    expect(deps.github.createRef).not.toHaveBeenCalled();
+  });
+
+  it('throws BranchNotReadyError when the staging branch is missing', async () => {
+    const deps = baseDeps();
+    await expect(createBranchFromProduction({ ...deps, from: 'staging' })).rejects.toBeInstanceOf(
+      BranchNotReadyError
+    );
+    expect(deps.github.createRef).not.toHaveBeenCalled();
+  });
+
   it('throws when no repo can be resolved', async () => {
     const deps = baseDeps();
     deps.ticketsRepo.upsert({
