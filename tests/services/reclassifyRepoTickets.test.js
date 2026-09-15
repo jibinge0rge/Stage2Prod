@@ -36,7 +36,7 @@ async function baseSetup({
   return {
     owner: 'acme',
     name: 'widgets',
-    repoConfig: reposRepo.get('acme', 'widgets'),
+    repoConfig: await reposRepo.get('acme', 'widgets'),
     ticketsRepo,
     eventsRepo,
     repoResolver,
