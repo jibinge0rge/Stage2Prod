@@ -7,17 +7,17 @@ const {
 
 describe('syncPipelineWithPrMergeability', () => {
   it('promotes staging_queued to conflict when PR is dirty', async () => {
-    const { ticketsRepo, reposRepo } = createTestDb();
-    reposRepo.add('acme', 'widgets', { stagingBranch: 'staging', productionBranch: 'main' });
-    seedTicket(ticketsRepo, {
+    const { ticketsRepo, reposRepo } = await createTestDb();
+    await reposRepo.add('acme', 'widgets', { stagingBranch: 'staging', productionBranch: 'main' });
+    await seedTicket(ticketsRepo, {
       key: 'PROJ-1',
       pipelineState: PIPELINE_STATES.STAGING_QUEUED,
       repoOwner: 'acme',
       repoName: 'widgets',
     });
-    ticketsRepo.setGithubFacts('PROJ-1', { prNumber: 12, prState: 'open' });
+    await ticketsRepo.setGithubFacts('PROJ-1', { prNumber: 12, prState: 'open' });
 
-    const row = ticketsRepo.get('PROJ-1');
+    const row = await ticketsRepo.get('PROJ-1');
     const github = {
       getPr: vi.fn().mockResolvedValue({
         state: 'open',
@@ -29,21 +29,21 @@ describe('syncPipelineWithPrMergeability', () => {
 
     const next = await syncPipelineWithPrMergeability(row, { ticketsRepo, reposRepo, github });
     expect(next).toBe(PIPELINE_STATES.CONFLICT);
-    expect(ticketsRepo.get('PROJ-1').pipeline_state).toBe(PIPELINE_STATES.CONFLICT);
+    expect((await ticketsRepo.get('PROJ-1')).pipeline_state).toBe(PIPELINE_STATES.CONFLICT);
   });
 
   it('restores conflict to staging_queued when GitHub reports mergeable again', async () => {
-    const { ticketsRepo, reposRepo } = createTestDb();
-    reposRepo.add('acme', 'widgets', { stagingBranch: 'staging', productionBranch: 'main' });
-    seedTicket(ticketsRepo, {
+    const { ticketsRepo, reposRepo } = await createTestDb();
+    await reposRepo.add('acme', 'widgets', { stagingBranch: 'staging', productionBranch: 'main' });
+    await seedTicket(ticketsRepo, {
       key: 'PROJ-1',
       pipelineState: PIPELINE_STATES.CONFLICT,
       repoOwner: 'acme',
       repoName: 'widgets',
     });
-    ticketsRepo.setGithubFacts('PROJ-1', { prNumber: 12, prState: 'open' });
+    await ticketsRepo.setGithubFacts('PROJ-1', { prNumber: 12, prState: 'open' });
 
-    const row = ticketsRepo.get('PROJ-1');
+    const row = await ticketsRepo.get('PROJ-1');
     const github = {
       getPr: vi.fn().mockResolvedValue({
         state: 'open',
@@ -55,21 +55,21 @@ describe('syncPipelineWithPrMergeability', () => {
 
     const next = await syncPipelineWithPrMergeability(row, { ticketsRepo, reposRepo, github });
     expect(next).toBe(PIPELINE_STATES.STAGING_QUEUED);
-    expect(ticketsRepo.get('PROJ-1').pipeline_state).toBe(PIPELINE_STATES.STAGING_QUEUED);
+    expect((await ticketsRepo.get('PROJ-1')).pipeline_state).toBe(PIPELINE_STATES.STAGING_QUEUED);
   });
 
   it('reconcileMergeConflicts updates in-memory row objects for API responses', async () => {
-    const { ticketsRepo, reposRepo } = createTestDb();
-    reposRepo.add('acme', 'widgets', { stagingBranch: 'staging', productionBranch: 'main' });
-    seedTicket(ticketsRepo, {
+    const { ticketsRepo, reposRepo } = await createTestDb();
+    await reposRepo.add('acme', 'widgets', { stagingBranch: 'staging', productionBranch: 'main' });
+    await seedTicket(ticketsRepo, {
       key: 'PROJ-1',
       pipelineState: PIPELINE_STATES.STAGING_QUEUED,
       repoOwner: 'acme',
       repoName: 'widgets',
     });
-    ticketsRepo.setGithubFacts('PROJ-1', { prNumber: 12, prState: 'open' });
+    await ticketsRepo.setGithubFacts('PROJ-1', { prNumber: 12, prState: 'open' });
 
-    const rows = [ticketsRepo.get('PROJ-1')];
+    const rows = [await ticketsRepo.get('PROJ-1')];
     const repoResolver = {
       getClient: () => ({
         getPr: vi.fn().mockResolvedValue({

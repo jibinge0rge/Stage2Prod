@@ -50,7 +50,7 @@ describe('reclassifyRepoTickets', () => {
   it('detaches a PR whose base matches neither new staging nor production', async () => {
     // Real incident shape: PR still targets release-4.3.0-v1, but the repo
     // was remapped to production=prod / staging=develop.
-    const deps = baseSetup({
+    const deps = await baseSetup({
       productionBranch: 'prod',
       stagingBranch: 'develop',
       pipelineState: PIPELINE_STATES.QUEUED,
@@ -68,15 +68,15 @@ describe('reclassifyRepoTickets', () => {
         prBase: 'release-4.3.0-v1',
       }),
     ]);
-    const row = deps.ticketsRepo.get('VIM-115');
+    const row = await deps.ticketsRepo.get('VIM-115');
     expect(row.pipeline_state).toBe(PIPELINE_STATES.UNMERGED);
     expect(row.pr_number).toBeNull();
     expect(row.branch_name).toBe('VIM-115');
-    expect(deps.eventsRepo.timelineForTicket('VIM-115')[0].title).toBe('Detached PR after branch remap');
+    expect((await deps.eventsRepo.timelineForTicket('VIM-115'))[0].title).toBe('Detached PR after branch remap');
   });
 
   it('flips staging_queued → queued when the old staging branch is now production', async () => {
-    const deps = baseSetup({
+    const deps = await baseSetup({
       productionBranch: 'release-4.3.0-v1',
       stagingBranch: 'develop',
       pipelineState: PIPELINE_STATES.STAGING_QUEUED,
@@ -93,12 +93,12 @@ describe('reclassifyRepoTickets', () => {
         detached: false,
       }),
     ]);
-    expect(deps.ticketsRepo.get('VIM-115').pipeline_state).toBe(PIPELINE_STATES.QUEUED);
-    expect(deps.ticketsRepo.get('VIM-115').pr_number).toBe(175);
+    expect((await deps.ticketsRepo.get('VIM-115')).pipeline_state).toBe(PIPELINE_STATES.QUEUED);
+    expect((await deps.ticketsRepo.get('VIM-115')).pr_number).toBe(175);
   });
 
   it('flips queued → staging_queued when the PR base is the new staging branch', async () => {
-    const deps = baseSetup({
+    const deps = await baseSetup({
       productionBranch: 'prod',
       stagingBranch: 'develop',
       pipelineState: PIPELINE_STATES.QUEUED,
@@ -112,11 +112,11 @@ describe('reclassifyRepoTickets', () => {
       nextState: PIPELINE_STATES.STAGING_QUEUED,
       detached: false,
     });
-    expect(deps.ticketsRepo.get('VIM-115').pipeline_state).toBe(PIPELINE_STATES.STAGING_QUEUED);
+    expect((await deps.ticketsRepo.get('VIM-115')).pipeline_state).toBe(PIPELINE_STATES.STAGING_QUEUED);
   });
 
   it('flips queued → staging_queued when the live PR base is the staging branch', async () => {
-    const deps = baseSetup({
+    const deps = await baseSetup({
       productionBranch: 'release-4.3.0-v1',
       stagingBranch: 'develop',
       pipelineState: PIPELINE_STATES.QUEUED,
@@ -129,11 +129,11 @@ describe('reclassifyRepoTickets', () => {
       nextState: PIPELINE_STATES.STAGING_QUEUED,
       prBase: 'develop',
     });
-    expect(deps.ticketsRepo.get('VIM-115').pipeline_state).toBe(PIPELINE_STATES.STAGING_QUEUED);
+    expect((await deps.ticketsRepo.get('VIM-115')).pipeline_state).toBe(PIPELINE_STATES.STAGING_QUEUED);
   });
 
   it('no-ops when the PR base already matches the current pipeline role', async () => {
-    const deps = baseSetup({
+    const deps = await baseSetup({
       productionBranch: 'prod',
       stagingBranch: 'develop',
       pipelineState: PIPELINE_STATES.QUEUED,
@@ -142,15 +142,15 @@ describe('reclassifyRepoTickets', () => {
 
     const changes = await reclassifyRepoTickets(deps);
     expect(changes).toEqual([]);
-    expect(deps.ticketsRepo.get('VIM-115').pipeline_state).toBe(PIPELINE_STATES.QUEUED);
+    expect((await deps.ticketsRepo.get('VIM-115')).pipeline_state).toBe(PIPELINE_STATES.QUEUED);
   });
 
   it('clears a linked PR that 404s on GitHub', async () => {
-    const deps = baseSetup();
+    const deps = await baseSetup();
     deps.github.getPr.mockRejectedValue(Object.assign(new Error('gone'), { status: 404 }));
 
     const changes = await reclassifyRepoTickets(deps);
     expect(changes[0]).toMatchObject({ detached: true, nextState: PIPELINE_STATES.UNMERGED });
-    expect(deps.ticketsRepo.get('VIM-115').pr_number).toBeNull();
+    expect((await deps.ticketsRepo.get('VIM-115')).pr_number).toBeNull();
   });
 });

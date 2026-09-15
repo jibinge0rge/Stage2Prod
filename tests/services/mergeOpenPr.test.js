@@ -97,7 +97,7 @@ describe('mergeOpenPr', () => {
   });
 
   it('marks CONFLICT before calling merge when GitHub reports the PR is not mergeable (dirty)', async () => {
-    const deps = baseDeps({ pipelineState: PIPELINE_STATES.STAGING_QUEUED });
+    const deps = await baseDeps({ pipelineState: PIPELINE_STATES.STAGING_QUEUED });
     deps.github.getPr = vi.fn().mockResolvedValue({
       number: 42,
       state: 'open',
@@ -110,22 +110,22 @@ describe('mergeOpenPr', () => {
 
     await expect(mergeOpenPr(deps)).rejects.toMatchObject({ status: 409 });
     expect(deps.github.mergePr).not.toHaveBeenCalled();
-    expect(deps.ticketsRepo.get('PROJ-1').pipeline_state).toBe(PIPELINE_STATES.CONFLICT);
+    expect((await deps.ticketsRepo.get('PROJ-1')).pipeline_state).toBe(PIPELINE_STATES.CONFLICT);
   });
 
   it('marks CONFLICT and comments on Jira when GitHub refuses the merge (405) with a genuine conflict', async () => {
-    const deps = baseDeps({ pipelineState: PIPELINE_STATES.STAGING_QUEUED });
+    const deps = await baseDeps({ pipelineState: PIPELINE_STATES.STAGING_QUEUED });
     const err = new Error('Pull Request is not mergeable');
     err.status = 405;
     deps.github.mergePr = vi.fn().mockRejectedValue(err);
 
     await expect(mergeOpenPr(deps)).rejects.toMatchObject({ status: 409 });
-    expect(deps.ticketsRepo.get('PROJ-1').pipeline_state).toBe(PIPELINE_STATES.CONFLICT);
+    expect((await deps.ticketsRepo.get('PROJ-1')).pipeline_state).toBe(PIPELINE_STATES.CONFLICT);
     expect(deps.jira.addComment).toHaveBeenCalledWith('PROJ-1', expect.stringContaining('conflict'));
   });
 
   it('clears pipeline state to unmerged (not stuck in "conflict") when the PR no longer exists on GitHub, without ever attempting a merge', async () => {
-    const deps = baseDeps({ pipelineState: PIPELINE_STATES.STAGING_QUEUED });
+    const deps = await baseDeps({ pipelineState: PIPELINE_STATES.STAGING_QUEUED });
     const notFound = new Error('Not Found');
     notFound.status = 404;
     deps.github.getPr = vi.fn().mockRejectedValue(notFound);
@@ -134,7 +134,7 @@ describe('mergeOpenPr', () => {
     expect(deps.github.mergePr).not.toHaveBeenCalled();
     // Unmerged, not conflict — there's nothing left to retry, so the
     // ticket shouldn't be stuck showing a dead-end "Retry merge" button.
-    const row = deps.ticketsRepo.get('PROJ-1');
+    const row = await deps.ticketsRepo.get('PROJ-1');
     expect(row.pipeline_state).toBe(PIPELINE_STATES.UNMERGED);
     // The stale PR reference must go too, or the drawer keeps showing
     // "Pull request #N" and a frozen check status for a PR that's gone.
@@ -144,48 +144,48 @@ describe('mergeOpenPr', () => {
   });
 
   it('clears pipeline state to unmerged (not stuck in "conflict") when the PR was closed without merging, without attempting a merge', async () => {
-    const deps = baseDeps({ pipelineState: PIPELINE_STATES.QUEUED, prState: 'closed', merged: false });
+    const deps = await baseDeps({ pipelineState: PIPELINE_STATES.QUEUED, prState: 'closed', merged: false });
 
     await expect(mergeOpenPr(deps)).rejects.toMatchObject({ status: 409, message: expect.stringContaining('closed without merging') });
     expect(deps.github.mergePr).not.toHaveBeenCalled();
-    const row = deps.ticketsRepo.get('PROJ-1');
+    const row = await deps.ticketsRepo.get('PROJ-1');
     expect(row.pipeline_state).toBe(PIPELINE_STATES.UNMERGED);
     expect(row.pr_number).toBeNull();
   });
 
   it('reconciles instead of erroring when the PR was already merged outside Stage2Prod', async () => {
-    const deps = baseDeps({ pipelineState: PIPELINE_STATES.STAGING_QUEUED, prState: 'closed', merged: true });
+    const deps = await baseDeps({ pipelineState: PIPELINE_STATES.STAGING_QUEUED, prState: 'closed', merged: true });
 
     const result = await mergeOpenPr(deps);
 
     expect(result).toMatchObject({ outcome: 'MERGED', target: 'staging', alreadyMerged: true });
     expect(deps.github.mergePr).not.toHaveBeenCalled();
-    expect(deps.ticketsRepo.get('PROJ-1').pipeline_state).toBe(PIPELINE_STATES.STAGING);
+    expect((await deps.ticketsRepo.get('PROJ-1')).pipeline_state).toBe(PIPELINE_STATES.STAGING);
   });
 
   it('marks CONFLICT when GitHub merge returns 422', async () => {
-    const deps = baseDeps({ pipelineState: PIPELINE_STATES.STAGING_QUEUED });
+    const deps = await baseDeps({ pipelineState: PIPELINE_STATES.STAGING_QUEUED });
     const err = new Error('Merge conflict');
     err.status = 422;
     deps.github.mergePr = vi.fn().mockRejectedValue(err);
 
     await expect(mergeOpenPr(deps)).rejects.toMatchObject({ status: 409 });
-    expect(deps.ticketsRepo.get('PROJ-1').pipeline_state).toBe(PIPELINE_STATES.CONFLICT);
+    expect((await deps.ticketsRepo.get('PROJ-1')).pipeline_state).toBe(PIPELINE_STATES.CONFLICT);
   });
 
   it('propagates an unrelated GitHub error (e.g. 503) without marking conflict', async () => {
-    const deps = baseDeps({ pipelineState: PIPELINE_STATES.QUEUED });
+    const deps = await baseDeps({ pipelineState: PIPELINE_STATES.QUEUED });
     const err = new Error('server error');
     err.status = 503;
     deps.github.mergePr = vi.fn().mockRejectedValue(err);
 
     await expect(mergeOpenPr(deps)).rejects.toThrow('server error');
-    expect(deps.ticketsRepo.get('PROJ-1').pipeline_state).toBe(PIPELINE_STATES.QUEUED);
+    expect((await deps.ticketsRepo.get('PROJ-1')).pipeline_state).toBe(PIPELINE_STATES.QUEUED);
     expect(deps.github.deleteRef).not.toHaveBeenCalled();
   });
 
   it('propagates an unrelated getPr error (e.g. 401) without treating it as "gone"', async () => {
-    const deps = baseDeps({ pipelineState: PIPELINE_STATES.QUEUED });
+    const deps = await baseDeps({ pipelineState: PIPELINE_STATES.QUEUED });
     const err = new Error('Bad credentials');
     err.status = 401;
     deps.github.getPr = vi.fn().mockRejectedValue(err);
@@ -195,7 +195,7 @@ describe('mergeOpenPr', () => {
   });
 
   it('serializes two concurrent merges targeting the same repo+branch via the ref lock', async () => {
-    const deps = baseDeps({ pipelineState: PIPELINE_STATES.QUEUED });
+    const deps = await baseDeps({ pipelineState: PIPELINE_STATES.QUEUED });
     const order = [];
     deps.github.mergePr = vi.fn().mockImplementation(async () => {
       order.push('merge-start');
@@ -207,8 +207,8 @@ describe('mergeOpenPr', () => {
     // Second call would 400 (already DEVELOP) after the first succeeds —
     // what matters here is that they don't run concurrently. Use two
     // separate tickets on the same production branch/lock key instead.
-    seedTicket(deps.ticketsRepo, { key: 'PROJ-2', jiraStatus: 'Approved', pipelineState: PIPELINE_STATES.QUEUED });
-    deps.ticketsRepo.setGithubFacts('PROJ-2', { prNumber: 99, branchName: 'feat/PROJ-2-thing' });
+    await seedTicket(deps.ticketsRepo, { key: 'PROJ-2', jiraStatus: 'Approved', pipelineState: PIPELINE_STATES.QUEUED });
+    await deps.ticketsRepo.setGithubFacts('PROJ-2', { prNumber: 99, branchName: 'feat/PROJ-2-thing' });
 
     await Promise.all([
       mergeOpenPr(deps),
@@ -219,7 +219,7 @@ describe('mergeOpenPr', () => {
   });
 
   it('approves then merges when the PAT is not the PR author (QA merging a developer PR)', async () => {
-    const deps = baseDeps({ pipelineState: PIPELINE_STATES.STAGING_QUEUED });
+    const deps = await baseDeps({ pipelineState: PIPELINE_STATES.STAGING_QUEUED });
     deps.github.getPr = vi.fn().mockResolvedValue({
       number: 42,
       state: 'open',
@@ -240,11 +240,11 @@ describe('mergeOpenPr', () => {
       body: 'Approved from Stage2Prod.',
     });
     expect(deps.github.mergePr).toHaveBeenCalledWith(42, { mergeMethod: 'merge' });
-    expect(deps.ticketsRepo.get('PROJ-1').pipeline_state).toBe(PIPELINE_STATES.STAGING);
+    expect((await deps.ticketsRepo.get('PROJ-1')).pipeline_state).toBe(PIPELINE_STATES.STAGING);
   });
 
   it('does not approve when the PAT is the PR author', async () => {
-    const deps = baseDeps({ pipelineState: PIPELINE_STATES.STAGING_QUEUED });
+    const deps = await baseDeps({ pipelineState: PIPELINE_STATES.STAGING_QUEUED });
     deps.github.getPr = vi.fn().mockResolvedValue({
       number: 42,
       state: 'open',
@@ -264,7 +264,7 @@ describe('mergeOpenPr', () => {
   });
 
   it('still merges if approve fails (e.g. already approved or not permitted)', async () => {
-    const deps = baseDeps({ pipelineState: PIPELINE_STATES.STAGING_QUEUED });
+    const deps = await baseDeps({ pipelineState: PIPELINE_STATES.STAGING_QUEUED });
     deps.github.getPr = vi.fn().mockResolvedValue({
       number: 42,
       state: 'open',
@@ -280,6 +280,6 @@ describe('mergeOpenPr', () => {
 
     await mergeOpenPr(deps);
     expect(deps.github.mergePr).toHaveBeenCalled();
-    expect(deps.ticketsRepo.get('PROJ-1').pipeline_state).toBe(PIPELINE_STATES.STAGING);
+    expect((await deps.ticketsRepo.get('PROJ-1')).pipeline_state).toBe(PIPELINE_STATES.STAGING);
   });
 });
