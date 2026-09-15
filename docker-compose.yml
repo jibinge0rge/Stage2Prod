@@ -1,4 +1,19 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=stage2prod
+      - POSTGRES_PASSWORD=stage2prod
+      - POSTGRES_DB=stage2prod
+    volumes:
+      - stage2prod-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stage2prod -d stage2prod"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
   stage2prod:
     build: .
     image: stage2prod:latest
@@ -8,10 +23,14 @@ services:
       - .env
     environment:
       - PORT=3000
-      - DB_PATH=/app/data/stage2prod.db
-    volumes:
-      - stage2prod-data:/app/data
+      # Points at the postgres service above by default. Override
+      # DATABASE_URL in .env to point at a cloud-hosted Postgres instead —
+      # this variable takes priority over the one set here.
+      - DATABASE_URL=${DATABASE_URL:-postgres://stage2prod:stage2prod@postgres:5432/stage2prod}
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
-  stage2prod-data:
+  stage2prod-pgdata:

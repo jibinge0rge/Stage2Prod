@@ -4,8 +4,8 @@ const { OUTCOMES } = require('../../src/lib/constants');
 
 describe('assignTicket', () => {
   it('writes the Jira assignee and mirrors name/avatar onto the ticket row', async () => {
-    const { ticketsRepo, eventsRepo } = createTestDb();
-    seedTicket(ticketsRepo, { key: 'PROJ-1', jiraStatus: 'In QA' });
+    const { ticketsRepo, eventsRepo } = await createTestDb();
+    await seedTicket(ticketsRepo, { key: 'PROJ-1', jiraStatus: 'In QA' });
     const jira = { tryAssign: vi.fn().mockResolvedValue({ assigned: true }) };
 
     const result = await assignTicket({
@@ -23,11 +23,11 @@ describe('assignTicket', () => {
 
     expect(result.assigned).toBe(true);
     expect(jira.tryAssign).toHaveBeenCalledWith('PROJ-1', 'q1');
-    expect(ticketsRepo.get('PROJ-1')).toMatchObject({
+    expect(await ticketsRepo.get('PROJ-1')).toMatchObject({
       assignee_name: 'Quinn',
       assignee_avatar_url: 'https://x/q.png',
     });
-    const { events } = eventsRepo.list({ ticketKey: 'PROJ-1' });
+    const { events } = await eventsRepo.list({ ticketKey: 'PROJ-1' });
     expect(events[0]).toMatchObject({
       outcome: OUTCOMES.NOTED,
       title: 'Assigned to Quinn',
@@ -36,8 +36,8 @@ describe('assignTicket', () => {
   });
 
   it('swallows thrown errors so a git write is never failed by Jira', async () => {
-    const { ticketsRepo } = createTestDb();
-    seedTicket(ticketsRepo, { key: 'PROJ-1' });
+    const { ticketsRepo } = await createTestDb();
+    await seedTicket(ticketsRepo, { key: 'PROJ-1' });
     const jira = { assign: vi.fn().mockRejectedValue(new Error('jira down')) };
 
     await expect(
@@ -49,7 +49,7 @@ describe('assignTicket', () => {
         log: noopLogger,
       })
     ).resolves.toMatchObject({ assigned: false, reason: 'error' });
-    expect(ticketsRepo.get('PROJ-1').assignee_name).toBeNull();
+    expect((await ticketsRepo.get('PROJ-1')).assignee_name).toBeNull();
   });
 });
 
@@ -58,8 +58,8 @@ describe('assignTicketToRole', () => {
   const qa2 = { accountId: 'q2', displayName: 'Sam', avatarUrl: null };
 
   it('assigns the sole person in a role without an explicit default', async () => {
-    const { ticketsRepo } = createTestDb();
-    seedTicket(ticketsRepo, { key: 'PROJ-1' });
+    const { ticketsRepo } = await createTestDb();
+    await seedTicket(ticketsRepo, { key: 'PROJ-1' });
     const jira = { tryAssign: vi.fn().mockResolvedValue({ assigned: true }) };
 
     const result = await assignTicketToRole({
@@ -76,8 +76,8 @@ describe('assignTicketToRole', () => {
   });
 
   it('assigns the configured default when a role has several people', async () => {
-    const { ticketsRepo } = createTestDb();
-    seedTicket(ticketsRepo, { key: 'PROJ-1' });
+    const { ticketsRepo } = await createTestDb();
+    await seedTicket(ticketsRepo, { key: 'PROJ-1' });
     const jira = { tryAssign: vi.fn().mockResolvedValue({ assigned: true }) };
 
     await assignTicketToRole({
@@ -93,8 +93,8 @@ describe('assignTicketToRole', () => {
   });
 
   it('skips and records a note when several people are configured with no default', async () => {
-    const { ticketsRepo, eventsRepo } = createTestDb();
-    seedTicket(ticketsRepo, { key: 'PROJ-1' });
+    const { ticketsRepo, eventsRepo } = await createTestDb();
+    await seedTicket(ticketsRepo, { key: 'PROJ-1' });
     const jira = { tryAssign: vi.fn() };
 
     const result = await assignTicketToRole({
@@ -109,13 +109,13 @@ describe('assignTicketToRole', () => {
 
     expect(result).toEqual({ assigned: false, reason: 'no-default' });
     expect(jira.tryAssign).not.toHaveBeenCalled();
-    const { events } = eventsRepo.list({ ticketKey: 'PROJ-1' });
+    const { events } = await eventsRepo.list({ ticketKey: 'PROJ-1' });
     expect(events[0].title).toMatch(/Skipped QA assignment/);
   });
 
   it('skips silently when the role has no people', async () => {
-    const { ticketsRepo, eventsRepo } = createTestDb();
-    seedTicket(ticketsRepo, { key: 'PROJ-1' });
+    const { ticketsRepo, eventsRepo } = await createTestDb();
+    await seedTicket(ticketsRepo, { key: 'PROJ-1' });
     const jira = { tryAssign: vi.fn() };
 
     const result = await assignTicketToRole({
@@ -130,6 +130,6 @@ describe('assignTicketToRole', () => {
 
     expect(result).toEqual({ assigned: false, reason: 'empty-role' });
     expect(jira.tryAssign).not.toHaveBeenCalled();
-    expect(eventsRepo.list({ ticketKey: 'PROJ-1' }).events).toHaveLength(0);
+    expect((await eventsRepo.list({ ticketKey: 'PROJ-1' })).events).toHaveLength(0);
   });
 });

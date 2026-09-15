@@ -41,10 +41,9 @@ that recently changed status — see **Choosing the JQL**.
 ## Project layout
 
 ```
-src/            Express backend (poller, handlers, routes, SQLite persistence)
+src/            Express backend (poller, handlers, routes, Postgres persistence)
 tests/          Vitest suite — handlers, mutex, clients, routes (Jira/GitHub mocked)
 web/            React dashboard (Vite)
-data/           SQLite database file (gitignored)
 ```
 
 ## Setup
@@ -56,10 +55,14 @@ npm install
 cp .env.example .env
 ```
 
+Stage2Prod persists to Postgres (shared across every user, not a local file) — either point it at Postgres
+you already run, or use the `postgres` service in `docker-compose.yml` (see **Docker** below).
+
 Fill in `.env`:
 
 | Var | Notes |
 |---|---|
+| `DATABASE_URL` | Postgres connection string, `postgres://user:password@host:port/database`. Defaults to `postgres://stage2prod:stage2prod@localhost:5432/stage2prod` if unset — matches `docker compose up -d postgres`. |
 | `GITHUB_TOKEN` | A GitHub PAT (classic or fine-grained) with `repo` scope, covering every repo you'll watch. |
 | `JIRA_HOST` | e.g. `your-domain.atlassian.net` |
 | `JIRA_EMAIL` / `JIRA_API_TOKEN` | See **Creating a Jira API token** below. |
@@ -71,12 +74,20 @@ Fill in `.env`:
 Note there's no `GITHUB_OWNER`/`GITHUB_REPO` — Stage2Prod watches however many repos you connect at runtime
 (see **Watching repositories** below), not one fixed repo baked into `.env`.
 
+Start Postgres (skip if `DATABASE_URL` already points at one you run yourself):
+
+```bash
+docker compose up -d postgres
+```
+
 Start the API:
 
 ```bash
 npm run dev:api      # nodemon, port 3000
 # or: npm start       # no auto-restart
 ```
+
+Migrations run automatically on startup — no separate migrate step.
 
 Optional: seed the database with demo data (mockup-shaped sample tickets/events, plus one demo watched repo)
 so the dashboard has something to show before you've connected real Jira/GitHub credentials:
@@ -146,35 +157,37 @@ deleted, or otherwise acted on automatically. Backed by `GET /api/untracked[?rep
 
 ## Docker
 
-The `Dockerfile` is a multi-stage build: it builds the frontend, installs backend dependencies (with the
-build tools `better-sqlite3` needs), then assembles a slim runtime image containing only `node_modules`,
-`src`, and the built `web/dist` — the same single-port "Express serves the SPA + the API" mode as
-`npm start`. It runs as a non-root user and declares `/app/data` as a volume for the SQLite file.
+The `Dockerfile` is a multi-stage build: it builds the frontend, installs backend dependencies, then
+assembles a slim runtime image containing only `node_modules`, `src`, and the built `web/dist` — the same
+single-port "Express serves the SPA + the API" mode as `npm start`. It runs as a non-root user.
 
 ```bash
 docker compose up --build
 ```
 
-This reads `.env` from the repo root (`env_file: .env` in `docker-compose.yml`) and persists the database in
-a named volume (`stage2prod-data`) so it survives container restarts and rebuilds. The app is then at
-`http://localhost:3000`.
+`docker-compose.yml` includes a `postgres:16-alpine` service (data persisted in the `stage2prod-pgdata`
+named volume) that the app service waits on (`depends_on: condition: service_healthy`) and connects to via
+`DATABASE_URL` by default. The app itself reads `.env` from the repo root (`env_file: .env`). The app is
+then at `http://localhost:3000`.
 
-Without compose:
+To point the container at a different Postgres instead — a managed/cloud database rather than the bundled
+one — set `DATABASE_URL` in `.env`; it overrides the compose default and the bundled `postgres` service is
+simply unused (you can drop it from the `stage2prod` service's `depends_on` locally if you don't want it
+started at all).
+
+Without compose (bring your own Postgres):
 
 ```bash
 docker build -t stage2prod .
 docker run -d --name stage2prod \
   -p 3000:3000 \
   --env-file .env \
-  -v stage2prod-data:/app/data \
   stage2prod
 ```
 
 Notes:
-- `DB_PATH` inside the container defaults to `/app/data/stage2prod.db` (set in `docker-compose.yml`) — keep
-  it under `/app/data` so it lands on the volume, or it's lost on the next `docker compose down -v` / rebuild.
-- Secrets (`GITHUB_TOKEN`, `JIRA_API_TOKEN`, `API_TOKEN`) come from `.env` at *run* time via `--env-file` /
-  `env_file`, never baked into the image.
+- Secrets (`GITHUB_TOKEN`, `JIRA_API_TOKEN`, `API_TOKEN`, `DATABASE_URL`) come from `.env` at *run* time via
+  `--env-file` / `env_file`, never baked into the image.
 - `HEALTHCHECK` in the Dockerfile hits `GET /api/health`, so `docker ps` / `docker compose ps` reflect real
   service health, not just "the process is alive."
 - To ship the built frontend for a different backend URL, the SPA calls `/api/*` as a relative path, so it
@@ -253,7 +266,8 @@ above), set `JIRA_POLL_CLAUSE=status CHANGED AFTER -5m` (or similar) in `.env`.
 npm test
 ```
 
-Vitest, with the Jira and GitHub HTTP clients mocked via `nock` and an in-memory SQLite database per test file.
-Covers all three event handlers (success/conflict/held/no-match/dry-run paths), the ref-lock's serialization
-and non-blocking-reject behaviour, retry/backoff edge cases on both clients, and the API routes' auth and
-response shapes.
+Vitest, with the Jira and GitHub HTTP clients mocked via `nock` and an isolated in-memory Postgres-compatible
+database (via `pg-mem`, running the real migrations) per test file — no real Postgres server needed to run
+the suite. Covers all three event handlers (success/conflict/held/no-match/dry-run paths), the ref-lock's
+serialization and non-blocking-reject behaviour, retry/backoff edge cases on both clients, and the API
+routes' auth and response shapes.
