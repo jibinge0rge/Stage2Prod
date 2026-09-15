@@ -141,14 +141,14 @@ describe('POST /api/staging/reset', () => {
     expect(ctx.github.createPr).toHaveBeenCalledWith(
       expect.objectContaining({ base: 'staging', head: 'develop' })
     );
-    expect(ctx.ticketsRepo.get('PROJ-1').pipeline_state).toBe('staging');
+    expect((await ctx.ticketsRepo.get('PROJ-1')).pipeline_state).toBe('staging');
 
-    const { events } = ctx.eventsRepo.list({ outcome: 'PR_OPENED' });
+    const { events } = await ctx.eventsRepo.list({ outcome: 'PR_OPENED' });
     expect(events.some((e) => e.action === 'reset-pr')).toBe(true);
   });
 
   it('reuses an existing production→staging PR when force-update is blocked', async () => {
-    const ctx = buildTestCtx();
+    const ctx = await buildTestCtx();
     ctx.github.updateRef.mockRejectedValue(new HttpError(403, 'protected branch hook declined'));
     ctx.github.listOpenPulls.mockResolvedValue([
       {
@@ -176,7 +176,7 @@ describe('POST /api/staging/reset', () => {
   });
 
   it('skips updateRef when staging already matches production', async () => {
-    const ctx = buildTestCtx();
+    const ctx = await buildTestCtx();
     ctx.github.getRef.mockResolvedValue('same-sha');
     const app = createApp(ctx);
 
@@ -192,7 +192,7 @@ describe('POST /api/staging/reset', () => {
   });
 
   it('returns 409 when the staging lock for that repo is already held', async () => {
-    const ctx = buildTestCtx();
+    const ctx = await buildTestCtx();
     const app = createApp(ctx);
 
     let releaseHold;
@@ -213,8 +213,8 @@ describe('POST /api/staging/reset', () => {
   });
 
   it("does not block on a different repo's staging lock", async () => {
-    const ctx = buildTestCtx();
-    ctx.reposRepo.add('other', 'repo');
+    const ctx = await buildTestCtx();
+    await ctx.reposRepo.add('other', 'repo');
     const app = createApp(ctx);
 
     let releaseHold;
@@ -234,12 +234,12 @@ describe('POST /api/staging/reset', () => {
   });
 
   it('remergeInQa sequentially re-opens a staging PR for every In QA ticket in that repo and reports per-ticket outcomes', async () => {
-    const ctx = buildTestCtx();
-    ctx.ticketsRepo.upsert({ key: 'PROJ-1', jiraStatus: 'In QA', pipelineState: 'unmerged', repoOwner: REPO.owner, repoName: REPO.name });
-    ctx.ticketsRepo.upsert({ key: 'PROJ-2', jiraStatus: 'In QA', pipelineState: 'unmerged', repoOwner: REPO.owner, repoName: REPO.name });
+    const ctx = await buildTestCtx();
+    await ctx.ticketsRepo.upsert({ key: 'PROJ-1', jiraStatus: 'In QA', pipelineState: 'unmerged', repoOwner: REPO.owner, repoName: REPO.name });
+    await ctx.ticketsRepo.upsert({ key: 'PROJ-2', jiraStatus: 'In QA', pipelineState: 'unmerged', repoOwner: REPO.owner, repoName: REPO.name });
     // A ticket "In QA" in a different repo must not be swept up in this repo's remerge.
-    ctx.reposRepo.add('other', 'repo');
-    ctx.ticketsRepo.upsert({ key: 'PROJ-3', jiraStatus: 'In QA', pipelineState: 'unmerged', repoOwner: 'other', repoName: 'repo' });
+    await ctx.reposRepo.add('other', 'repo');
+    await ctx.ticketsRepo.upsert({ key: 'PROJ-3', jiraStatus: 'In QA', pipelineState: 'unmerged', repoOwner: 'other', repoName: 'repo' });
     const app = createApp(ctx);
 
     const res = await request(app)
@@ -253,6 +253,6 @@ describe('POST /api/staging/reset', () => {
     expect(res.body.remerge.results.every((r) => r.outcome === 'PR_OPENED')).toBe(true);
     expect(ctx.github.createPr).toHaveBeenCalledTimes(2);
     expect(ctx.github.createMerge).not.toHaveBeenCalled();
-    expect(ctx.ticketsRepo.get('PROJ-1').pipeline_state).toBe('staging_queued');
+    expect((await ctx.ticketsRepo.get('PROJ-1')).pipeline_state).toBe('staging_queued');
   });
 });

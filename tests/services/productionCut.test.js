@@ -202,13 +202,13 @@ describe('syncReleaseCutsFromGithub', () => {
     expect(cuts.map((c) => c.branchName)).toEqual(['release-4.3.0-v1', 'release-4.2.0']);
     expect(cuts[0].isLatest).toBe(true);
     expect(cuts[0].ticketCount).toBe(1);
-    expect(deps.cutsRepo.getByBranch('acme', 'widgets', 'akash-update-release4.4')).toBeNull();
+    expect(await deps.cutsRepo.getByBranch('acme', 'widgets', 'akash-update-release4.4')).toBeNull();
   });
 
   it('drops stored keys that are not tracked tickets', async () => {
     const { syncReleaseCutsFromGithub, hydrateCut } = require('../../src/services/productionCut');
-    const deps = baseDeps();
-    const stored = deps.cutsRepo.insert({
+    const deps = await baseDeps();
+    const stored = await deps.cutsRepo.insert({
       repoOwner: 'acme',
       repoName: 'widgets',
       branchName: 'release-4.3.0-v1',
@@ -234,7 +234,7 @@ describe('syncReleaseCutsFromGithub', () => {
     });
     expect(cuts[0].ticketCount).toBe(0);
 
-    const hydrated = hydrateCut(deps.cutsRepo.get(stored.id), deps.ticketsRepo);
+    const hydrated = await hydrateCut(await deps.cutsRepo.get(stored.id), deps.ticketsRepo);
     expect(hydrated.tickets.map((t) => t.key)).toEqual([]);
   });
 });

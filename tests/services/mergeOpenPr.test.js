@@ -36,47 +36,47 @@ async function baseDeps({ pipelineState, prNumber = 42, branchName = 'feat/PROJ-
 
 describe('mergeOpenPr', () => {
   it('merges a staging_queued ticket into staging, does not delete the branch', async () => {
-    const deps = baseDeps({ pipelineState: PIPELINE_STATES.STAGING_QUEUED });
+    const deps = await baseDeps({ pipelineState: PIPELINE_STATES.STAGING_QUEUED });
     const result = await mergeOpenPr(deps);
 
     expect(result.outcome).toBe('MERGED');
     expect(result.target).toBe('staging');
     expect(deps.github.mergePr).toHaveBeenCalledWith(42, { mergeMethod: 'merge' });
     expect(deps.github.deleteRef).not.toHaveBeenCalled();
-    expect(deps.ticketsRepo.get('PROJ-1').pipeline_state).toBe(PIPELINE_STATES.STAGING);
+    expect((await deps.ticketsRepo.get('PROJ-1')).pipeline_state).toBe(PIPELINE_STATES.STAGING);
     expect(deps.jira.addComment).toHaveBeenCalledWith('PROJ-1', expect.stringContaining('staging'));
     expect(deps.jira.tryTransition).toHaveBeenCalledWith('PROJ-1', 'In QA');
-    expect(deps.ticketsRepo.get('PROJ-1').jira_status).toBe('In QA');
+    expect((await deps.ticketsRepo.get('PROJ-1')).jira_status).toBe('In QA');
   });
 
   it('merges a queued ticket into develop and deletes the branch', async () => {
-    const deps = baseDeps({ pipelineState: PIPELINE_STATES.QUEUED });
+    const deps = await baseDeps({ pipelineState: PIPELINE_STATES.QUEUED });
     const result = await mergeOpenPr(deps);
 
     expect(result.outcome).toBe('MERGED');
     expect(result.target).toBe('develop');
     expect(deps.github.mergePr).toHaveBeenCalledWith(42, { mergeMethod: 'merge' });
     expect(deps.github.deleteRef).toHaveBeenCalledWith('feat/PROJ-1-thing');
-    expect(deps.ticketsRepo.get('PROJ-1').pipeline_state).toBe(PIPELINE_STATES.DEVELOP);
+    expect((await deps.ticketsRepo.get('PROJ-1')).pipeline_state).toBe(PIPELINE_STATES.DEVELOP);
     expect(deps.jira.addComment).toHaveBeenCalledWith('PROJ-1', expect.stringContaining('develop'));
     expect(deps.jira.tryTransition).toHaveBeenCalledWith('PROJ-1', 'Done');
-    expect(deps.ticketsRepo.get('PROJ-1').jira_status).toBe('Done');
+    expect((await deps.ticketsRepo.get('PROJ-1')).jira_status).toBe('Done');
   });
 
   it('never calls mergePr with squash', async () => {
-    const deps = baseDeps({ pipelineState: PIPELINE_STATES.QUEUED });
+    const deps = await baseDeps({ pipelineState: PIPELINE_STATES.QUEUED });
     await mergeOpenPr(deps);
     expect(deps.github.mergePr.mock.calls[0][1].mergeMethod).toBe('merge');
   });
 
   it('rejects with MergeNotReadyError when the ticket has nothing awaiting merge', async () => {
-    const deps = baseDeps({ pipelineState: PIPELINE_STATES.UNMERGED });
+    const deps = await baseDeps({ pipelineState: PIPELINE_STATES.UNMERGED });
     await expect(mergeOpenPr(deps)).rejects.toThrow(MergeNotReadyError);
     expect(deps.github.mergePr).not.toHaveBeenCalled();
   });
 
   it('throws 404 when the ticket does not exist', async () => {
-    const deps = baseDeps({ pipelineState: PIPELINE_STATES.QUEUED });
+    const deps = await baseDeps({ pipelineState: PIPELINE_STATES.QUEUED });
     deps.ticketKey = 'NOPE-1';
     await expect(mergeOpenPr(deps)).rejects.toMatchObject({ status: 404 });
   });
@@ -86,14 +86,14 @@ describe('mergeOpenPr', () => {
     // and now mergeable (e.g. the user fixed it on GitHub) — a retry
     // should succeed and land it on staging, using the PR's base to know
     // that's the right target.
-    const deps = baseDeps({ pipelineState: PIPELINE_STATES.CONFLICT, prNumber: 7, branchName: 'feat/PROJ-1-thing' });
+    const deps = await baseDeps({ pipelineState: PIPELINE_STATES.CONFLICT, prNumber: 7, branchName: 'feat/PROJ-1-thing' });
     deps.github.getPr = vi.fn().mockResolvedValue({ number: 7, state: 'open', merged: false, base: 'qa', head: 'feat/PROJ-1-thing', mergeable: true });
 
     const result = await mergeOpenPr(deps);
 
     expect(result.outcome).toBe('MERGED');
     expect(result.target).toBe('staging');
-    expect(deps.ticketsRepo.get('PROJ-1').pipeline_state).toBe(PIPELINE_STATES.STAGING);
+    expect((await deps.ticketsRepo.get('PROJ-1')).pipeline_state).toBe(PIPELINE_STATES.STAGING);
   });
 
   it('marks CONFLICT before calling merge when GitHub reports the PR is not mergeable (dirty)', async () => {

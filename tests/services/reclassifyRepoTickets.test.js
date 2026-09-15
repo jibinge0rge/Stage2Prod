@@ -2,15 +2,15 @@ const { reclassifyRepoTickets } = require('../../src/services/reclassifyRepoTick
 const { createTestDb, seedTicket, noopLogger, fakeRepoResolver } = require('../setup');
 const { PIPELINE_STATES } = require('../../src/lib/constants');
 
-function baseSetup({
+async function baseSetup({
   productionBranch = 'prod',
   stagingBranch = 'develop',
   pipelineState = PIPELINE_STATES.QUEUED,
   prBase = 'release-4.3.0-v1',
 } = {}) {
-  const { ticketsRepo, eventsRepo, reposRepo } = createTestDb();
-  reposRepo.add('acme', 'widgets', { productionBranch, stagingBranch, jiraProjectKey: 'VIM' });
-  seedTicket(ticketsRepo, {
+  const { ticketsRepo, eventsRepo, reposRepo } = await createTestDb();
+  await reposRepo.add('acme', 'widgets', { productionBranch, stagingBranch, jiraProjectKey: 'VIM' });
+  await seedTicket(ticketsRepo, {
     key: 'VIM-115',
     jiraStatus: 'In Progress',
     pipelineState,
