@@ -12,7 +12,10 @@ const { assignTicketToRole } = require('../lib/assignTicket');
  * (wrapped in the staging lock below) and by the staging-reset re-merge
  * loop (which already holds the staging lock, so it calls this directly).
  *
- * Opens the PR then moves Jira to the mapped "In QA" status.
+ * Opens the PR then moves Jira to the mapped "In QA" status and assigns
+ * the repo's default QA. Assignment runs after the status write so Jira
+ * workflows that only allow QA as assignee once the ticket is In QA still
+ * succeed.
  */
 async function ensureStagingPrCore({
   ticketKey,
@@ -30,18 +33,19 @@ async function ensureStagingPrCore({
   statusMap,
   teamRoles,
 }) {
-  await assignTicketToRole({
-    jira,
-    ticketsRepo,
-    eventsRepo,
-    ticketKey,
-    teamRoles,
-    role: 'qa',
-    log,
-    trigger,
-    repoOwner,
-    repoName,
-  });
+  const assignDefaultQa = () =>
+    assignTicketToRole({
+      jira,
+      ticketsRepo,
+      eventsRepo,
+      ticketKey,
+      teamRoles,
+      role: 'qa',
+      log,
+      trigger,
+      repoOwner,
+      repoName,
+    });
 
   const branch = await ticketMatcher.findBranchForTicket(ticketKey);
   if (!branch) {
@@ -56,6 +60,8 @@ async function ensureStagingPrCore({
       repoOwner,
       repoName,
     });
+    // Jira is already In QA (that's why this handler fired).
+    await assignDefaultQa();
     return { outcome: OUTCOMES.NOTED };
   }
 
@@ -88,6 +94,7 @@ async function ensureStagingPrCore({
     status: jiraStatusForStage('in_qa', statusMap),
     log,
   });
+  await assignDefaultQa();
   eventsRepo.insertEvent({
     ticketKey,
     trigger,

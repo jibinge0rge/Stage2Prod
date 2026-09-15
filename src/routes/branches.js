@@ -1,5 +1,4 @@
 const express = require('express');
-const { countNonMergeCommits } = require('../lib/gitCommit');
 const { reconcileOpenPrBases } = require('../services/reclassifyRepoTickets');
 const { reconcileMergeConflicts } = require('../services/syncPrMergeability');
 const { syncReleaseCutsFromGithub } = require('../services/productionCut');
@@ -65,8 +64,8 @@ async function branchesForRepo({ repo, ticketsRepo, reposRepo, cutsRepo, github,
       github.listCommitsAhead(productionHeadName, stagingBranch).catch(() => null),
       github.listCommitsAhead(stagingBranch, productionHeadName).catch(() => null),
     ]);
-    commitsAheadOfProduction = aheadOfProduction ? countNonMergeCommits(aheadOfProduction) : null;
-    commitsAheadOfStaging = aheadOfStaging ? countNonMergeCommits(aheadOfStaging) : null;
+    commitsAheadOfProduction = aheadOfProduction ? aheadOfProduction.length : null;
+    commitsAheadOfStaging = aheadOfStaging ? aheadOfStaging.length : null;
   }
 
   return {

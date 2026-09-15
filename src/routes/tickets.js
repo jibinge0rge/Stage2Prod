@@ -11,6 +11,8 @@ const { reconcileOpenPrBases } = require('../services/reclassifyRepoTickets');
 const { syncPipelineWithPrMergeability, reconcileMergeConflicts } = require('../services/syncPrMergeability');
 const { reconcileGoneBranch } = require('../services/reconcileGoneBranch');
 const { emptyTeamRoles, normalizePerson } = require('../lib/teamRoles');
+const { stageForJiraStatus } = require('../lib/statusHandlerMap');
+const { assignTicketToRole } = require('../lib/assignTicket');
 
 function rowToApi(row, reposRepo) {
   let repo = null;
@@ -220,7 +222,23 @@ function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller,
       // instead of waiting up to POLL_INTERVAL_MS for the next tick.
       await poller.pollNow();
       const row = ticketsRepo.get(key);
-      return res.json(rowToApi(row, reposRepo));
+      const repoConfig = row?.repo_owner ? reposRepo.get(row.repo_owner, row.repo_name) : null;
+      const statusMap = repoConfig?.effectiveStatusHandlerMap || repoConfig?.statusHandlerMap;
+      if (repoConfig && stageForJiraStatus(name, statusMap) === 'in_qa') {
+        await assignTicketToRole({
+          jira,
+          ticketsRepo,
+          eventsRepo,
+          ticketKey: key,
+          teamRoles: repoConfig.teamRoles,
+          role: 'qa',
+          log: logger,
+          trigger: 'POST /api/tickets/:key/transition',
+          repoOwner: row.repo_owner,
+          repoName: row.repo_name,
+        });
+      }
+      return res.json(rowToApi(ticketsRepo.get(key), reposRepo));
     } catch (err) {
       return next(err);
     }

@@ -369,6 +369,65 @@ describe('POST /api/tickets/:key/transition', () => {
       .send({});
     expect(res.status).toBe(400);
   });
+
+  it('assigns the repo default QA when the ticket is transitioned to In QA', async () => {
+    const ctx = buildTestCtx();
+    ctx.jira.tryAssign = vi.fn().mockResolvedValue({ assigned: true });
+    ctx.reposRepo.add('acme', 'widgets', {
+      teamRoles: {
+        qa: [{ accountId: 'q1', displayName: 'Quinn', avatarUrl: 'https://x/q.png' }],
+        de: [],
+        da: [],
+        defaults: { de: null, qa: 'q1', da: null },
+      },
+    });
+    ctx.ticketsRepo.upsert({
+      key: 'PROJ-1',
+      jiraStatus: 'In Development',
+      pipelineState: 'unmerged',
+      repoOwner: 'acme',
+      repoName: 'widgets',
+    });
+    const app = createApp(ctx);
+
+    const res = await request(app)
+      .post('/api/tickets/PROJ-1/transition')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send({ name: 'In QA' });
+
+    expect(res.status).toBe(200);
+    expect(ctx.jira.tryAssign).toHaveBeenCalledWith('PROJ-1', 'q1');
+    expect(res.body.assignee).toEqual({ name: 'Quinn', avatarUrl: 'https://x/q.png' });
+  });
+
+  it('does not assign QA when the ticket is transitioned to a non-QA status', async () => {
+    const ctx = buildTestCtx();
+    ctx.jira.tryAssign = vi.fn().mockResolvedValue({ assigned: true });
+    ctx.reposRepo.add('acme', 'widgets', {
+      teamRoles: {
+        qa: [{ accountId: 'q1', displayName: 'Quinn', avatarUrl: null }],
+        de: [],
+        da: [],
+        defaults: { de: null, qa: 'q1', da: null },
+      },
+    });
+    ctx.ticketsRepo.upsert({
+      key: 'PROJ-1',
+      jiraStatus: 'In QA',
+      pipelineState: 'staging',
+      repoOwner: 'acme',
+      repoName: 'widgets',
+    });
+    const app = createApp(ctx);
+
+    const res = await request(app)
+      .post('/api/tickets/PROJ-1/transition')
+      .set('Authorization', `Bearer ${config.API_TOKEN}`)
+      .send({ name: 'Done' });
+
+    expect(res.status).toBe(200);
+    expect(ctx.jira.tryAssign).not.toHaveBeenCalled();
+  });
 });
 
 describe('POST /api/tickets/:key/comment', () => {

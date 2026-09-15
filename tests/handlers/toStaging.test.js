@@ -59,7 +59,8 @@ describe('toStaging handler', () => {
     expect(events[0].repo).toEqual({ owner: 'acme', name: 'widgets' });
   });
 
-  it('assigns the repo default QA when the ticket enters In QA', async () => {
+  it('assigns the repo default QA after the ticket is moved to In QA', async () => {
+    const order = [];
     const deps = baseDeps({
       teamRoles: {
         qa: [{ accountId: 'q1', displayName: 'Quinn', avatarUrl: 'https://x/q.png' }],
@@ -68,12 +69,20 @@ describe('toStaging handler', () => {
         defaults: { de: null, qa: 'q1', da: null },
       },
     });
-    deps.jira.tryAssign = vi.fn().mockResolvedValue({ assigned: true });
+    deps.jira.tryTransition = vi.fn().mockImplementation(async () => {
+      order.push('transition');
+      return { transitioned: true };
+    });
+    deps.jira.tryAssign = vi.fn().mockImplementation(async () => {
+      order.push('assign');
+      return { assigned: true };
+    });
 
     await toStaging(deps);
 
     expect(deps.jira.tryAssign).toHaveBeenCalledWith('PROJ-1', 'q1');
     expect(deps.ticketsRepo.get('PROJ-1').assignee_name).toBe('Quinn');
+    expect(order).toEqual(['transition', 'assign']);
   });
 
   it('still assigns QA when no matching branch is found', async () => {

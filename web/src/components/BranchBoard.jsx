@@ -96,34 +96,55 @@ function Airgap({ title, tickets, onSelect, emptyLabel }) {
   );
 }
 
-function DriftPill({ commitsAhead, onStagingCount }) {
-  const known = commitsAhead !== null && commitsAhead !== undefined;
-  const behindByTickets = onStagingCount > 0;
-  const inSync = known && commitsAhead === 0 && !behindByTickets;
-
-  if (inSync) {
+function DriftPill({ stagingSha, productionSha, stagingAhead, productionAhead, onStagingCount }) {
+  const sameSha = Boolean(stagingSha && productionSha && stagingSha === productionSha);
+  if (sameSha) {
     return <div className={`${styles.driftPill} ${styles.driftPillSync}`}>Production in sync</div>;
   }
+
+  const stagingKnown = stagingAhead !== null && stagingAhead !== undefined;
+  const prodKnown = productionAhead !== null && productionAhead !== undefined;
+  const behindByTickets = onStagingCount > 0;
 
   if (behindByTickets) {
     return (
       <div className={`${styles.driftPill} ${styles.driftPillBehind}`}>
         Production behind: {onStagingCount} {onStagingCount === 1 ? 'ticket' : 'tickets'}
-        {known && commitsAhead > 0 ? (
+        {stagingKnown && stagingAhead > 0 ? (
           <span style={{ color: 'var(--n-muted)', fontWeight: 400 }}>
-            · {commitsAhead} {commitsAhead === 1 ? 'commit' : 'commits'}
+            · {stagingAhead} {stagingAhead === 1 ? 'commit' : 'commits'} on staging
           </span>
         ) : null}
       </div>
     );
   }
 
-  if (known && commitsAhead > 0) {
+  if (stagingKnown && stagingAhead > 0 && prodKnown && productionAhead > 0) {
     return (
       <div className={`${styles.driftPill} ${styles.driftPillBehind}`}>
-        Staging ahead: {commitsAhead} {commitsAhead === 1 ? 'commit' : 'commits'}
+        Diverged: staging +{stagingAhead} · production +{productionAhead}
       </div>
     );
+  }
+
+  if (stagingKnown && stagingAhead > 0) {
+    return (
+      <div className={`${styles.driftPill} ${styles.driftPillBehind}`}>
+        Staging ahead: {stagingAhead} {stagingAhead === 1 ? 'commit' : 'commits'}
+      </div>
+    );
+  }
+
+  if (prodKnown && productionAhead > 0) {
+    return (
+      <div className={`${styles.driftPill} ${styles.driftPillBehind}`}>
+        Production ahead: {productionAhead} {productionAhead === 1 ? 'commit' : 'commits'}
+      </div>
+    );
+  }
+
+  if (stagingSha && productionSha && stagingSha !== productionSha) {
+    return <div className={`${styles.driftPill} ${styles.driftPillBehind}`}>Production and staging differ</div>;
   }
 
   return <div className={styles.driftPill}>Drift unknown</div>;
@@ -159,6 +180,7 @@ export default function BranchBoard({ entry, untrackedStagingCount = 0, inDevTic
   const inDev = inDevTickets.filter((t) => !ON_PATHWAY.has(t.pipelineState));
 
   const commitsAhead = staging?.commitsAheadOfDevelop;
+  const productionAhead = develop?.commitsAheadOfStaging;
 
   return (
     <div className={`card ${styles.pathway}`}>
@@ -171,7 +193,13 @@ export default function BranchBoard({ entry, untrackedStagingCount = 0, inDevTic
             </div>
           ) : null}
         </div>
-        <DriftPill commitsAhead={commitsAhead} onStagingCount={onStaging.length} />
+        <DriftPill
+          stagingSha={staging?.headSha}
+          productionSha={cuts[0]?.sha || develop?.headSha}
+          stagingAhead={commitsAhead}
+          productionAhead={productionAhead}
+          onStagingCount={onStaging.length}
+        />
         <div className="spacer" />
         <div style={{ fontSize: 11, color: 'var(--n-muted)' }}>merge commits only</div>
         {repo ? (
