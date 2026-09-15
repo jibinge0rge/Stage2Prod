@@ -23,30 +23,8 @@ function rowToApi(row) {
 }
 
 function createCutsRepo(db) {
-  const insertStmt = db.prepare(`
-    INSERT INTO production_cuts (
-      repo_owner, repo_name, branch_name, sha, staging_sha, previous_sha, tickets_json, created_at
-    ) VALUES (
-      @repoOwner, @repoName, @branchName, @sha, @stagingSha, @previousSha, @ticketsJson, @createdAt
-    )
-  `);
-  const listStmt = db.prepare(`
-    SELECT * FROM production_cuts
-    WHERE repo_owner = ? AND repo_name = ?
-    ORDER BY created_at DESC, id DESC
-  `);
-  const getStmt = db.prepare('SELECT * FROM production_cuts WHERE id = ?');
-  const getByBranchStmt = db.prepare(`
-    SELECT * FROM production_cuts WHERE repo_owner = ? AND repo_name = ? AND branch_name = ?
-  `);
-  const updateStmt = db.prepare(`
-    UPDATE production_cuts
-    SET sha = ?, previous_sha = ?, tickets_json = ?
-    WHERE id = ?
-  `);
-
   return {
-    insert({
+    async insert({
       repoOwner,
       repoName,
       branchName,
@@ -56,32 +34,52 @@ function createCutsRepo(db) {
       tickets = [],
       createdAt = new Date().toISOString(),
     }) {
-      const info = insertStmt.run({
-        repoOwner,
-        repoName,
-        branchName,
-        sha,
-        stagingSha,
-        previousSha,
-        ticketsJson: JSON.stringify(tickets),
-        createdAt,
-      });
-      return this.get(info.lastInsertRowid);
+      const { rows } = await db.query(
+        `
+        INSERT INTO production_cuts (
+          repo_owner, repo_name, branch_name, sha, staging_sha, previous_sha, tickets_json, created_at
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8
+        )
+        RETURNING *
+        `,
+        [repoOwner, repoName, branchName, sha, stagingSha, previousSha, JSON.stringify(tickets), createdAt]
+      );
+      return rowToApi(rows[0]);
     },
-    list(owner, name) {
-      return listStmt.all(owner, name).map(rowToApi);
+    async list(owner, name) {
+      const { rows } = await db.query(
+        `
+        SELECT * FROM production_cuts
+        WHERE repo_owner = $1 AND repo_name = $2
+        ORDER BY created_at DESC, id DESC
+        `,
+        [owner, name]
+      );
+      return rows.map(rowToApi);
     },
-    get(id) {
-      const row = getStmt.get(id);
-      return row ? rowToApi(row) : null;
+    async get(id) {
+      const { rows } = await db.query('SELECT * FROM production_cuts WHERE id = $1', [id]);
+      return rows[0] ? rowToApi(rows[0]) : null;
     },
-    getByBranch(owner, name, branchName) {
-      const row = getByBranchStmt.get(owner, name, branchName);
-      return row ? rowToApi(row) : null;
+    async getByBranch(owner, name, branchName) {
+      const { rows } = await db.query(
+        'SELECT * FROM production_cuts WHERE repo_owner = $1 AND repo_name = $2 AND branch_name = $3',
+        [owner, name, branchName]
+      );
+      return rows[0] ? rowToApi(rows[0]) : null;
     },
-    update(id, { sha, previousSha = null, tickets = [] } = {}) {
-      updateStmt.run(sha, previousSha, JSON.stringify(tickets), id);
-      return this.get(id);
+    async update(id, { sha, previousSha = null, tickets = [] } = {}) {
+      const { rows } = await db.query(
+        `
+        UPDATE production_cuts
+        SET sha = $1, previous_sha = $2, tickets_json = $3
+        WHERE id = $4
+        RETURNING *
+        `,
+        [sha, previousSha, JSON.stringify(tickets), id]
+      );
+      return rows[0] ? rowToApi(rows[0]) : null;
     },
   };
 }

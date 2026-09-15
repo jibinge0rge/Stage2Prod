@@ -3,8 +3,8 @@ const { createApp } = require('../../src/app');
 const { createTestDb, fakeDisplayGithub } = require('../setup');
 const { config } = require('../../src/config');
 
-function buildTestCtx({ getClient } = {}) {
-  const { ticketsRepo, eventsRepo, cursorRepo, lockManager, reposRepo } = createTestDb();
+async function buildTestCtx({ getClient } = {}) {
+  const { ticketsRepo, eventsRepo, cursorRepo, lockManager, reposRepo } = await createTestDb();
   const poller = { isRunning: () => true, nextPollAt: null };
   const displayGithub = fakeDisplayGithub({ getClient });
   return { config, ticketsRepo, eventsRepo, cursorRepo, lockManager, reposRepo, poller, displayGithub };
@@ -30,9 +30,9 @@ describe('GET /api/untracked', () => {
         { sha: 's2', commit: { message: 'unplanned staging tweak', author: { name: 'bob', date: 't2' } }, html_url: 'https://x/c2' },
       ]),
     });
-    const ctx = buildTestCtx({ getClient: () => github });
-    ctx.reposRepo.add('acme', 'widgets');
-    ctx.ticketsRepo.upsert({ key: 'PROJ-1', summary: 's', jiraStatus: 'In QA' });
+    const ctx = await buildTestCtx({ getClient: () => github });
+    await ctx.reposRepo.add('acme', 'widgets');
+    await ctx.ticketsRepo.upsert({ key: 'PROJ-1', summary: 's', jiraStatus: 'In QA' });
     const app = createApp(ctx);
 
     const res = await request(app).get('/api/untracked');
@@ -50,9 +50,9 @@ describe('GET /api/untracked', () => {
   it('filters to one repo via ?repo=owner/name', async () => {
     const githubA = stubGithub();
     const githubB = stubGithub();
-    const ctx = buildTestCtx({ getClient: (owner, name) => (name === 'widgets' ? githubA : githubB) });
-    ctx.reposRepo.add('acme', 'widgets');
-    ctx.reposRepo.add('acme', 'gadgets');
+    const ctx = await buildTestCtx({ getClient: (owner, name) => (name === 'widgets' ? githubA : githubB) });
+    await ctx.reposRepo.add('acme', 'widgets');
+    await ctx.reposRepo.add('acme', 'gadgets');
     const app = createApp(ctx);
 
     const res = await request(app).get('/api/untracked').query({ repo: 'acme/gadgets' });

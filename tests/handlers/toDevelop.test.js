@@ -2,9 +2,9 @@ const { toDevelop } = require('../../src/handlers/toDevelop');
 const { createTestDb, seedTicket, noopLogger } = require('../setup');
 const { OUTCOMES, PIPELINE_STATES } = require('../../src/lib/constants');
 
-function baseDeps(overrides = {}) {
-  const { ticketsRepo, eventsRepo, lockManager } = createTestDb();
-  seedTicket(ticketsRepo, { key: 'PROJ-1', jiraStatus: 'Approved' });
+async function baseDeps(overrides = {}) {
+  const { ticketsRepo, eventsRepo, lockManager } = await createTestDb();
+  await seedTicket(ticketsRepo, { key: 'PROJ-1', jiraStatus: 'Approved' });
 
   const pr = { number: 42, head: { ref: 'feat/PROJ-1-thing', sha: 'headsha1' }, base: { ref: 'main' } };
 
@@ -42,21 +42,21 @@ function baseDeps(overrides = {}) {
 
 describe('toDevelop handler', () => {
   it('finds the already-open PR into production, stores its check status, but does not merge it', async () => {
-    const deps = baseDeps();
+    const deps = await baseDeps();
     const result = await toDevelop(deps);
 
     expect(result.outcome).toBe(OUTCOMES.PR_OPENED);
     expect(deps.ticketMatcher.findOpenPrForTicket).toHaveBeenCalledWith('PROJ-1', { base: 'main' });
     expect(deps.github.createPr).not.toHaveBeenCalled();
     expect(deps.jira.addComment).toHaveBeenCalledWith('PROJ-1', expect.stringContaining('main'));
-    const row = deps.ticketsRepo.get('PROJ-1');
+    const row = await deps.ticketsRepo.get('PROJ-1');
     expect(row.pipeline_state).toBe(PIPELINE_STATES.QUEUED);
     expect(row.pr_number).toBe(42);
     expect(row.check_status).toBe('passing');
   });
 
   it('creates a PR from the matched feature branch when none already exists into production', async () => {
-    const deps = baseDeps();
+    const deps = await baseDeps();
     deps.ticketMatcher.findOpenPrForTicket = vi.fn().mockResolvedValue(null);
 
     const result = await toDevelop(deps);
@@ -68,29 +68,29 @@ describe('toDevelop handler', () => {
       title: expect.any(String),
       body: expect.any(String),
     });
-    expect(deps.ticketsRepo.get('PROJ-1').pr_number).toBe(43);
+    expect((await deps.ticketsRepo.get('PROJ-1')).pr_number).toBe(43);
   });
 
   it('stores no check status when GitHub has zero checks', async () => {
-    const deps = baseDeps();
+    const deps = await baseDeps();
     deps.github.getCombinedStatus = vi.fn().mockResolvedValue({ overall: null });
     await toDevelop(deps);
-    expect(deps.ticketsRepo.get('PROJ-1').check_status).toBeNull();
+    expect((await deps.ticketsRepo.get('PROJ-1')).check_status).toBeNull();
   });
 
   it('still stores check status without gating on it — failing checks no longer block the PR being ensured', async () => {
-    const deps = baseDeps();
+    const deps = await baseDeps();
     deps.github.getCombinedStatus = vi.fn().mockResolvedValue({ overall: 'failing' });
 
     const result = await toDevelop(deps);
 
     expect(result.outcome).toBe(OUTCOMES.PR_OPENED);
-    expect(deps.ticketsRepo.get('PROJ-1').check_status).toBe('failing');
-    expect(deps.ticketsRepo.get('PROJ-1').pipeline_state).toBe(PIPELINE_STATES.QUEUED);
+    expect((await deps.ticketsRepo.get('PROJ-1')).check_status).toBe('failing');
+    expect((await deps.ticketsRepo.get('PROJ-1')).pipeline_state).toBe(PIPELINE_STATES.QUEUED);
   });
 
   it('records NOTED and takes no action when no open PR and no matching branch exist', async () => {
-    const deps = baseDeps();
+    const deps = await baseDeps();
     deps.ticketMatcher.findOpenPrForTicket = vi.fn().mockResolvedValue(null);
     deps.ticketMatcher.findBranchForTicket = vi.fn().mockResolvedValue(null);
 
@@ -102,7 +102,7 @@ describe('toDevelop handler', () => {
   });
 
   it('never calls mergePr or deleteRef — merging is a separate, human-triggered action', async () => {
-    const deps = baseDeps();
+    const deps = await baseDeps();
     deps.github.mergePr = vi.fn();
     deps.github.deleteRef = vi.fn();
     await toDevelop(deps);
@@ -111,7 +111,7 @@ describe('toDevelop handler', () => {
   });
 
   it('assigns the repo default DE after a production PR is opened', async () => {
-    const deps = baseDeps({
+    const deps = await baseDeps({
       teamRoles: {
         de: [
           { accountId: 'a1', displayName: 'Ada', avatarUrl: null },
@@ -127,11 +127,11 @@ describe('toDevelop handler', () => {
     await toDevelop(deps);
 
     expect(deps.jira.tryAssign).toHaveBeenCalledWith('PROJ-1', 'a2');
-    expect(deps.ticketsRepo.get('PROJ-1').assignee_name).toBe('Bob');
+    expect((await deps.ticketsRepo.get('PROJ-1')).assignee_name).toBe('Bob');
   });
 
   it('does not assign DE when no production PR can be opened', async () => {
-    const deps = baseDeps({
+    const deps = await baseDeps({
       teamRoles: {
         de: [{ accountId: 'a1', displayName: 'Ada', avatarUrl: null }],
         qa: [],

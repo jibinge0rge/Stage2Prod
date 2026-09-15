@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS tickets (
 );
 
 CREATE TABLE IF NOT EXISTS events (
-  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  id             SERIAL PRIMARY KEY,
   timestamp      TEXT NOT NULL,
   correlation_id TEXT,
   ticket_key     TEXT,
@@ -41,10 +41,10 @@ CREATE TABLE IF NOT EXISTS poll_state (
   jira_rate_limit_remaining  INTEGER,
   jira_rate_limit_reset_at   TEXT
 );
-INSERT OR IGNORE INTO poll_state (id, cursor) VALUES (1, NULL);
+INSERT INTO poll_state (id, cursor) VALUES (1, NULL) ON CONFLICT (id) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS lock_events (
-  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  id             SERIAL PRIMARY KEY,
   ref_name       TEXT NOT NULL,
   acquired_at    TEXT NOT NULL,
   released_at    TEXT,

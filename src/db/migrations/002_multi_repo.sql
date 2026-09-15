@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS repos (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  id         SERIAL PRIMARY KEY,
   owner      TEXT NOT NULL,
   name       TEXT NOT NULL,
   active     INTEGER NOT NULL DEFAULT 1,

@@ -13,13 +13,14 @@ function createUntrackedRouter({ reposRepo, displayGithub, ticketsRepo }) {
 
   router.get('/untracked', async (req, res, next) => {
     try {
-      const activeRepos = reposRepo.list({ activeOnly: true });
+      const activeRepos = await reposRepo.list({ activeOnly: true });
       const repoFilter = req.query.repo;
       const repos = repoFilter
         ? activeRepos.filter((r) => `${r.owner}/${r.name}` === repoFilter)
         : activeRepos;
 
-      const ticketKeys = ticketsRepo.list().map((t) => t.ticket_key);
+      const allTickets = await ticketsRepo.list();
+      const ticketKeys = allTickets.map((t) => t.ticket_key);
 
       const results = await Promise.all(
         repos.map((repo) =>

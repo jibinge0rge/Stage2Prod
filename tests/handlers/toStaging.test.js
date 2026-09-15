@@ -2,9 +2,9 @@ const { toStaging } = require('../../src/handlers/toStaging');
 const { createTestDb, seedTicket, noopLogger } = require('../setup');
 const { OUTCOMES, PIPELINE_STATES } = require('../../src/lib/constants');
 
-function baseDeps(overrides = {}) {
-  const { ticketsRepo, eventsRepo, lockManager } = createTestDb();
-  seedTicket(ticketsRepo, { key: 'PROJ-1', jiraStatus: 'In QA' });
+async function baseDeps(overrides = {}) {
+  const { ticketsRepo, eventsRepo, lockManager } = await createTestDb();
+  await seedTicket(ticketsRepo, { key: 'PROJ-1', jiraStatus: 'In QA' });
 
   const github = {
     createPr: vi.fn().mockResolvedValue({ number: 42, htmlUrl: 'https://x/42', headSha: 'headsha1' }),
@@ -38,7 +38,7 @@ function baseDeps(overrides = {}) {
 
 describe('toStaging handler', () => {
   it('opens a PR from the feature branch into the configured staging branch, but does not merge it', async () => {
-    const deps = baseDeps();
+    const deps = await baseDeps();
     const result = await toStaging(deps);
 
     expect(result.outcome).toBe(OUTCOMES.PR_OPENED);
@@ -50,18 +50,18 @@ describe('toStaging handler', () => {
       body: expect.any(String),
     });
     expect(deps.jira.addComment).toHaveBeenCalledWith('PROJ-1', expect.stringContaining('qa'));
-    const row = deps.ticketsRepo.get('PROJ-1');
+    const row = await deps.ticketsRepo.get('PROJ-1');
     expect(row.pipeline_state).toBe(PIPELINE_STATES.STAGING_QUEUED);
     expect(row.pr_number).toBe(42);
 
-    const { events } = deps.eventsRepo.list({ ticketKey: 'PROJ-1' });
+    const { events } = await deps.eventsRepo.list({ ticketKey: 'PROJ-1' });
     expect(events[0].outcome).toBe(OUTCOMES.PR_OPENED);
     expect(events[0].repo).toEqual({ owner: 'acme', name: 'widgets' });
   });
 
   it('assigns the repo default QA after the ticket is moved to In QA', async () => {
     const order = [];
-    const deps = baseDeps({
+    const deps = await baseDeps({
       teamRoles: {
         qa: [{ accountId: 'q1', displayName: 'Quinn', avatarUrl: 'https://x/q.png' }],
         de: [],
@@ -81,12 +81,12 @@ describe('toStaging handler', () => {
     await toStaging(deps);
 
     expect(deps.jira.tryAssign).toHaveBeenCalledWith('PROJ-1', 'q1');
-    expect(deps.ticketsRepo.get('PROJ-1').assignee_name).toBe('Quinn');
+    expect((await deps.ticketsRepo.get('PROJ-1')).assignee_name).toBe('Quinn');
     expect(order).toEqual(['transition', 'assign']);
   });
 
   it('still assigns QA when no matching branch is found', async () => {
-    const deps = baseDeps({
+    const deps = await baseDeps({
       teamRoles: {
         qa: [{ accountId: 'q1', displayName: 'Quinn', avatarUrl: null }],
         de: [],
@@ -105,18 +105,18 @@ describe('toStaging handler', () => {
   });
 
   it('reuses an already-open PR instead of creating a duplicate', async () => {
-    const deps = baseDeps();
+    const deps = await baseDeps();
     deps.ticketMatcher.findOpenPrForTicket = vi.fn().mockResolvedValue({ number: 7, head: { ref: 'feat/PROJ-1-thing' } });
 
     const result = await toStaging(deps);
 
     expect(result.outcome).toBe(OUTCOMES.PR_OPENED);
     expect(deps.github.createPr).not.toHaveBeenCalled();
-    expect(deps.ticketsRepo.get('PROJ-1').pr_number).toBe(7);
+    expect((await deps.ticketsRepo.get('PROJ-1')).pr_number).toBe(7);
   });
 
   it('records NOTED and makes no GitHub/Jira calls when no branch matches the ticket', async () => {
-    const deps = baseDeps();
+    const deps = await baseDeps();
     deps.ticketMatcher.findBranchForTicket = vi.fn().mockResolvedValue(null);
 
     const result = await toStaging(deps);
@@ -127,7 +127,7 @@ describe('toStaging handler', () => {
   });
 
   it('serializes two concurrent staging PR-opens in the same repo via the ref lock', async () => {
-    const deps = baseDeps();
+    const deps = await baseDeps();
     const order = [];
     deps.github.createPr = vi.fn().mockImplementation(async () => {
       order.push('open-start');
@@ -143,7 +143,7 @@ describe('toStaging handler', () => {
   });
 
   it('does NOT serialize concurrent staging PR-opens across two different repos', async () => {
-    const deps = baseDeps();
+    const deps = await baseDeps();
     const order = [];
     const slowOpen = async (label) => {
       order.push(`${label}-start`);

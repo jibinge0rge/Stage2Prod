@@ -3,8 +3,8 @@ const { createApp } = require('../../src/app');
 const { createTestDb } = require('../setup');
 const { config } = require('../../src/config');
 
-function buildTestCtx(overrides = {}) {
-  const { ticketsRepo, eventsRepo, cursorRepo, lockManager, reposRepo } = createTestDb();
+async function buildTestCtx(overrides = {}) {
+  const { ticketsRepo, eventsRepo, cursorRepo, lockManager, reposRepo } = await createTestDb();
   const githubRegistry = { rateLimit: { remaining: 4999, limit: 5000, resetAt: null } };
   const jira = {};
   const poller = { isRunning: () => true, nextPollAt: '2026-04-20T15:00:00.000Z' };
@@ -13,8 +13,8 @@ function buildTestCtx(overrides = {}) {
 
 describe('GET /api/health', () => {
   it('reports poller, github rate limit, and lock snapshot', async () => {
-    const ctx = buildTestCtx();
-    ctx.reposRepo.add('acme', 'widgets', { productionBranch: 'main', stagingBranch: 'qa' });
+    const ctx = await buildTestCtx();
+    await ctx.reposRepo.add('acme', 'widgets', { productionBranch: 'main', stagingBranch: 'qa' });
     const app = createApp(ctx);
 
     const res = await request(app).get('/api/health');
@@ -31,7 +31,7 @@ describe('GET /api/health', () => {
   });
 
   it('reports an empty lock list when no repos are watched yet', async () => {
-    const ctx = buildTestCtx();
+    const ctx = await buildTestCtx();
     const app = createApp(ctx);
 
     const res = await request(app).get('/api/health');
@@ -42,8 +42,8 @@ describe('GET /api/health', () => {
   });
 
   it('jiraJql falls back to config.JIRA_JQL when no watched repo has a Jira project key', async () => {
-    const ctx = buildTestCtx();
-    ctx.reposRepo.add('acme', 'widgets');
+    const ctx = await buildTestCtx();
+    await ctx.reposRepo.add('acme', 'widgets');
     const app = createApp(ctx);
 
     const res = await request(app).get('/api/health');
@@ -51,8 +51,8 @@ describe('GET /api/health', () => {
   });
 
   it('jiraJql is built from watched repos\' Jira project keys once any are configured', async () => {
-    const ctx = buildTestCtx();
-    ctx.reposRepo.add('acme', 'widgets', { jiraProjectKey: 'PROJ' });
+    const ctx = await buildTestCtx();
+    await ctx.reposRepo.add('acme', 'widgets', { jiraProjectKey: 'PROJ' });
     const app = createApp(ctx);
 
     const res = await request(app).get('/api/health');
@@ -61,7 +61,7 @@ describe('GET /api/health', () => {
   });
 
   it('includes the configured Jira email', async () => {
-    const ctx = buildTestCtx({ config: { ...config, JIRA_EMAIL: 'jibin.george@work.com' } });
+    const ctx = await buildTestCtx({ config: { ...config, JIRA_EMAIL: 'jibin.george@work.com' } });
     const app = createApp(ctx);
 
     const res = await request(app).get('/api/health');
@@ -71,7 +71,7 @@ describe('GET /api/health', () => {
 
 describe('POST /api/sync', () => {
   it('401s without a bearer token', async () => {
-    const app = createApp(buildTestCtx());
+    const app = createApp(await buildTestCtx());
     const res = await request(app).post('/api/sync').send({});
     expect(res.status).toBe(401);
   });
@@ -82,7 +82,7 @@ describe('POST /api/sync', () => {
       nextPollAt: '2026-04-20T15:00:00.000Z',
       pollNow: vi.fn().mockResolvedValue(undefined),
     };
-    const ctx = buildTestCtx({ poller });
+    const ctx = await buildTestCtx({ poller });
     const app = createApp(ctx);
 
     const res = await request(app)

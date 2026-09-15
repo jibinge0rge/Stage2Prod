@@ -15,7 +15,7 @@ function createGithubReposRouter({ config, reposRepo }) {
     try {
       const [accessible, watched] = await Promise.all([
         listAccessibleRepos(config.GITHUB_TOKEN),
-        Promise.resolve(reposRepo.list({ activeOnly: true })),
+        reposRepo.list({ activeOnly: true }),
       ]);
       const watchedKeys = new Set(watched.map((r) => `${r.owner}/${r.name}`));
       res.json({

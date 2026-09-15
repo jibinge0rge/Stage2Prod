@@ -12,11 +12,11 @@ async function rejected({ event, log, correlationId, repoOwner, repoName, github
 
   if (pr) {
     await github.addLabel(pr.number, 'qa-rejected');
-    ticketsRepo.setGithubFacts(event.ticketKey, { branchName: pr.head.ref, prNumber: pr.number });
+    await ticketsRepo.setGithubFacts(event.ticketKey, { branchName: pr.head.ref, prNumber: pr.number });
   }
 
-  ticketsRepo.setPipelineState(event.ticketKey, PIPELINE_STATES.REJECTED);
-  eventsRepo.insertEvent({
+  await ticketsRepo.setPipelineState(event.ticketKey, PIPELINE_STATES.REJECTED);
+  await eventsRepo.insertEvent({
     ticketKey: event.ticketKey,
     trigger,
     action: 'label',

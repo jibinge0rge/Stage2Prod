@@ -2,10 +2,10 @@ const { linkTicketPr, listLinkablePulls, LinkNotReadyError } = require('../../sr
 const { createTestDb, seedTicket, noopLogger } = require('../setup');
 const { PIPELINE_STATES } = require('../../src/lib/constants');
 
-function baseDeps() {
-  const { ticketsRepo, eventsRepo, reposRepo } = createTestDb();
-  reposRepo.add('acme', 'widgets', { productionBranch: 'main', stagingBranch: 'qa' });
-  seedTicket(ticketsRepo, {
+async function baseDeps() {
+  const { ticketsRepo, eventsRepo, reposRepo } = await createTestDb();
+  await reposRepo.add('acme', 'widgets', { productionBranch: 'main', stagingBranch: 'qa' });
+  await seedTicket(ticketsRepo, {
     key: 'PROJ-1',
     jiraStatus: 'In Progress',
     pipelineState: PIPELINE_STATES.UNMERGED,
@@ -59,21 +59,21 @@ function baseDeps() {
 
 describe('linkTicketPr', () => {
   it('attaches an open staging PR and queues it for merge', async () => {
-    const deps = baseDeps();
+    const deps = await baseDeps();
     const result = await linkTicketPr(deps);
 
     expect(result).toEqual({ linked: true, prNumber: 18, pipelineState: PIPELINE_STATES.STAGING_QUEUED, target: 'staging' });
-    const row = deps.ticketsRepo.get('PROJ-1');
+    const row = await deps.ticketsRepo.get('PROJ-1');
     expect(row.branch_name).toBe('hotfix-login');
     expect(row.pr_number).toBe(18);
     expect(row.pr_state).toBe('open');
     expect(row.pipeline_state).toBe(PIPELINE_STATES.STAGING_QUEUED);
     expect(deps.jira.addComment).toHaveBeenCalledWith('PROJ-1', expect.stringContaining('#18'));
-    expect(deps.eventsRepo.timelineForTicket('PROJ-1')[0].title).toBe('Linked existing PR');
+    expect((await deps.eventsRepo.timelineForTicket('PROJ-1'))[0].title).toBe('Linked existing PR');
   });
 
   it('attaches an open production PR as awaiting production', async () => {
-    const deps = baseDeps();
+    const deps = await baseDeps();
     deps.github.getPr.mockResolvedValue({
       number: 18,
       state: 'open',
@@ -88,7 +88,7 @@ describe('linkTicketPr', () => {
   });
 
   it('records a merged staging PR as already on staging', async () => {
-    const deps = baseDeps();
+    const deps = await baseDeps();
     deps.github.getPr.mockResolvedValue({
       number: 18,
       state: 'closed',
@@ -99,11 +99,11 @@ describe('linkTicketPr', () => {
     });
     const result = await linkTicketPr(deps);
     expect(result.pipelineState).toBe(PIPELINE_STATES.STAGING);
-    expect(deps.ticketsRepo.get('PROJ-1').pr_state).toBe('merged');
+    expect((await deps.ticketsRepo.get('PROJ-1')).pr_state).toBe('merged');
   });
 
   it('rejects a closed unmerged PR or one aimed at the wrong branch', async () => {
-    const deps = baseDeps();
+    const deps = await baseDeps();
     deps.github.getPr.mockResolvedValue({
       number: 18,
       state: 'closed',
@@ -124,20 +124,20 @@ describe('linkTicketPr', () => {
   });
 
   it('rejects when another ticket already owns that PR', async () => {
-    const deps = baseDeps();
-    seedTicket(deps.ticketsRepo, {
+    const deps = await baseDeps();
+    await seedTicket(deps.ticketsRepo, {
       key: 'PROJ-2',
       jiraStatus: 'In QA',
       pipelineState: PIPELINE_STATES.STAGING_QUEUED,
       repoOwner: 'acme',
       repoName: 'widgets',
     });
-    deps.ticketsRepo.setGithubFacts('PROJ-2', { prNumber: 18 });
+    await deps.ticketsRepo.setGithubFacts('PROJ-2', { prNumber: 18 });
     await expect(linkTicketPr(deps)).rejects.toThrow(/PROJ-2/);
   });
 
   it('404s when GitHub has no such PR', async () => {
-    const deps = baseDeps();
+    const deps = await baseDeps();
     deps.github.getPr.mockRejectedValue(Object.assign(new Error('Not Found'), { status: 404 }));
     await expect(linkTicketPr(deps)).rejects.toMatchObject({ status: 404 });
   });
@@ -145,7 +145,7 @@ describe('linkTicketPr', () => {
 
 describe('listLinkablePulls', () => {
   it('returns open PRs into staging or production and skips other bases', async () => {
-    const deps = baseDeps();
+    const deps = await baseDeps();
     const { pulls } = await listLinkablePulls(deps);
     expect(pulls.map((p) => p.number)).toEqual([18]);
     expect(pulls[0]).toMatchObject({

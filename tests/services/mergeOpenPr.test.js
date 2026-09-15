@@ -2,10 +2,10 @@ const { mergeOpenPr, MergeNotReadyError } = require('../../src/services/mergeOpe
 const { createTestDb, seedTicket, noopLogger } = require('../setup');
 const { PIPELINE_STATES } = require('../../src/lib/constants');
 
-function baseDeps({ pipelineState, prNumber = 42, branchName = 'feat/PROJ-1-thing', prState = 'open', merged = false } = {}) {
-  const { ticketsRepo, eventsRepo, lockManager } = createTestDb();
-  seedTicket(ticketsRepo, { key: 'PROJ-1', jiraStatus: 'In QA', pipelineState });
-  ticketsRepo.setGithubFacts('PROJ-1', { prNumber, branchName });
+async function baseDeps({ pipelineState, prNumber = 42, branchName = 'feat/PROJ-1-thing', prState = 'open', merged = false } = {}) {
+  const { ticketsRepo, eventsRepo, lockManager } = await createTestDb();
+  await seedTicket(ticketsRepo, { key: 'PROJ-1', jiraStatus: 'In QA', pipelineState });
+  await ticketsRepo.setGithubFacts('PROJ-1', { prNumber, branchName });
 
   // Base defaults to whichever branch matches the seeded pipelineState, so
   // most tests don't need to think about it; individual tests override it.

@@ -11,18 +11,18 @@ function prKey(owner, name, number) {
   return `${owner}/${name}#${number}`;
 }
 
-function linkedPrKeys(ticketsRepo, exceptKey) {
+async function linkedPrKeys(ticketsRepo, exceptKey) {
+  const all = await ticketsRepo.list();
   return new Set(
-    ticketsRepo
-      .list()
+    all
       .filter((t) => t.pr_number && t.repo_owner && t.ticket_key !== exceptKey)
       .map((t) => prKey(t.repo_owner, t.repo_name, t.pr_number))
   );
 }
 
-function reposForTicket(row, reposRepo) {
+async function reposForTicket(row, reposRepo) {
   if (row.repo_owner) {
-    const cfg = reposRepo.get(row.repo_owner, row.repo_name);
+    const cfg = await reposRepo.get(row.repo_owner, row.repo_name);
     return [
       {
         owner: row.repo_owner,
@@ -50,15 +50,15 @@ function targetLabel(pipelineState) {
 }
 
 async function listLinkablePulls({ ticketKey, ticketsRepo, reposRepo, repoResolver }) {
-  const row = ticketsRepo.get(ticketKey);
+  const row = await ticketsRepo.get(ticketKey);
   if (!row) {
     const err = new Error(`No ticket ${ticketKey}`);
     err.status = 404;
     throw err;
   }
 
-  const taken = linkedPrKeys(ticketsRepo, ticketKey);
-  const repos = reposForTicket(row, reposRepo);
+  const taken = await linkedPrKeys(ticketsRepo, ticketKey);
+  const repos = await reposForTicket(row, reposRepo);
   const pulls = [];
 
   for (const repo of repos) {
@@ -103,7 +103,7 @@ async function linkTicketPr({
   correlationId,
   trigger = 'POST /api/tickets/:key/pr/link',
 }) {
-  const row = ticketsRepo.get(ticketKey);
+  const row = await ticketsRepo.get(ticketKey);
   if (!row) {
     const err = new Error(`No ticket ${ticketKey}`);
     err.status = 404;
@@ -131,13 +131,13 @@ async function linkTicketPr({
     );
   }
 
-  const repoConfig = reposRepo.get(repoOwner, repoName);
+  const repoConfig = await reposRepo.get(repoOwner, repoName);
   if (!repoConfig) {
     throw new LinkNotReadyError(`${repoOwner}/${repoName} is not a watched repo`);
   }
 
-  const takenBy = ticketsRepo
-    .list()
+  const allTickets = await ticketsRepo.list();
+  const takenBy = allTickets
     .find((t) => t.ticket_key !== ticketKey && t.repo_owner === repoOwner && t.repo_name === repoName && t.pr_number === number);
   if (takenBy) {
     throw new LinkNotReadyError(`PR #${number} is already linked to ${takenBy.ticket_key}`);
@@ -163,8 +163,8 @@ async function linkTicketPr({
     );
   }
 
-  ticketsRepo.setRepo(ticketKey, repoOwner, repoName);
-  ticketsRepo.setGithubFacts(ticketKey, {
+  await ticketsRepo.setRepo(ticketKey, repoOwner, repoName);
+  await ticketsRepo.setGithubFacts(ticketKey, {
     branchName: pr.head,
     prNumber: pr.number,
     prState: pr.merged ? 'merged' : pr.state,
@@ -172,13 +172,13 @@ async function linkTicketPr({
   });
   if (pr.headSha && typeof github.getCombinedStatus === 'function') {
     const status = await github.getCombinedStatus(pr.headSha).catch(() => null);
-    if (status) ticketsRepo.setCheckStatus(ticketKey, status.overall);
+    if (status) await ticketsRepo.setCheckStatus(ticketKey, status.overall);
   }
-  ticketsRepo.setPipelineState(ticketKey, pipelineState);
+  await ticketsRepo.setPipelineState(ticketKey, pipelineState);
 
   const target = targetLabel(pipelineState);
   await jira.addComment(ticketKey, JIRA_COMMENTS.LINKED_PR(pr.number, pr.head, pr.base));
-  eventsRepo.insertEvent({
+  await eventsRepo.insertEvent({
     ticketKey,
     trigger,
     action: target === 'staging' ? 'pr:staging' : 'pr:develop',

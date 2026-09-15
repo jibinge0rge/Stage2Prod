@@ -112,7 +112,7 @@ async function resetStaging({
           throw err;
         }
 
-        eventsRepo.insertEvent({
+        await eventsRepo.insertEvent({
           trigger: 'POST /api/staging/reset',
           action: 'reset-pr',
           outcome: OUTCOMES.PR_OPENED,
@@ -152,16 +152,22 @@ async function resetStaging({
       }
     }
 
-    for (const t of ticketsRepo.listByPipelineStateAndRepo(PIPELINE_STATES.STAGING, owner, name)) {
-      ticketsRepo.setPipelineState(t.ticket_key, PIPELINE_STATES.UNMERGED);
-      ticketsRepo.clearGithubFacts(t.ticket_key);
+    const stagingTickets = await ticketsRepo.listByPipelineStateAndRepo(PIPELINE_STATES.STAGING, owner, name);
+    for (const t of stagingTickets) {
+      // eslint-disable-next-line no-await-in-loop
+      await ticketsRepo.setPipelineState(t.ticket_key, PIPELINE_STATES.UNMERGED);
+      // eslint-disable-next-line no-await-in-loop
+      await ticketsRepo.clearGithubFacts(t.ticket_key);
     }
-    for (const t of ticketsRepo.listByPipelineStateAndRepo(PIPELINE_STATES.CONFLICT, owner, name)) {
-      ticketsRepo.setPipelineState(t.ticket_key, PIPELINE_STATES.UNMERGED);
-      ticketsRepo.clearGithubFacts(t.ticket_key);
+    const conflictTickets = await ticketsRepo.listByPipelineStateAndRepo(PIPELINE_STATES.CONFLICT, owner, name);
+    for (const t of conflictTickets) {
+      // eslint-disable-next-line no-await-in-loop
+      await ticketsRepo.setPipelineState(t.ticket_key, PIPELINE_STATES.UNMERGED);
+      // eslint-disable-next-line no-await-in-loop
+      await ticketsRepo.clearGithubFacts(t.ticket_key);
     }
 
-    eventsRepo.insertEvent({
+    await eventsRepo.insertEvent({
       trigger: 'POST /api/staging/reset',
       action: 'reset-ref',
       outcome: OUTCOMES.RESET,
@@ -181,8 +187,8 @@ async function resetStaging({
 
     const remerge = { requested: !!remergeInQa, results: [] };
     if (remergeInQa) {
-      const inQaTickets = ticketsRepo
-        .list()
+      const allTickets = await ticketsRepo.list();
+      const inQaTickets = allTickets
         .filter(
           (t) =>
             t.repo_owner === owner

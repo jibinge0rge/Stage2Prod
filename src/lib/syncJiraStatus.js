@@ -62,7 +62,7 @@ async function syncJiraStatus({ jira, ticketsRepo, ticketKey, status, statusName
   }
 
   if (result?.transitioned) {
-    ticketsRepo.setLastSeenStatus(ticketKey, applied);
+    await ticketsRepo.setLastSeenStatus(ticketKey, applied);
     log?.info?.({ ticketKey, status: applied }, 'jira status synced from git action');
     return { ...result, status: applied };
   }

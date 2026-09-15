@@ -39,7 +39,7 @@ async function closeTicketPr({
   correlationId,
   trigger = 'POST /api/tickets/:key/pr/close',
 }) {
-  const row = ticketsRepo.get(ticketKey);
+  const row = await ticketsRepo.get(ticketKey);
   if (!row) {
     const err = new Error(`No ticket ${ticketKey}`);
     err.status = 404;
@@ -54,12 +54,12 @@ async function closeTicketPr({
   const prNumber = row.pr_number;
   const pr = await github.getPr(prNumber).catch((err) => (err.status === 404 ? null : Promise.reject(err)));
 
-  function recordClosed({ target, alreadyClosed, gone }) {
+  async function recordClosed({ target, alreadyClosed, gone }) {
     const nextState = nextStateFor(target);
-    ticketsRepo.setPipelineState(ticketKey, nextState);
-    ticketsRepo.clearGithubFacts(ticketKey);
+    await ticketsRepo.setPipelineState(ticketKey, nextState);
+    await ticketsRepo.clearGithubFacts(ticketKey);
     const branchName = target === 'staging' ? stagingBranch : productionBranch;
-    eventsRepo.insertEvent({
+    await eventsRepo.insertEvent({
       ticketKey,
       trigger,
       action: target === 'develop' ? 'pr:develop' : 'pr:staging',

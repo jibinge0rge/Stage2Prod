@@ -30,7 +30,7 @@ async function openTicketPr({
   correlationId,
   trigger = 'POST /api/tickets/:key/pr',
 }) {
-  const row = ticketsRepo.get(ticketKey);
+  const row = await ticketsRepo.get(ticketKey);
   if (!row) {
     const err = new Error(`No ticket ${ticketKey}`);
     err.status = 404;
@@ -42,7 +42,7 @@ async function openTicketPr({
   if (!row.repo_owner) {
     throw new PrNotReadyError('ticket has no resolved repo yet — create a branch first');
   }
-  const repoConfig = reposRepo.get(row.repo_owner, row.repo_name);
+  const repoConfig = await reposRepo.get(row.repo_owner, row.repo_name);
   if (!repoConfig) {
     throw new PrNotReadyError(`${row.repo_owner}/${row.repo_name} is not a watched repo`);
   }

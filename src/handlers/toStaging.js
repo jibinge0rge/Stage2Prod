@@ -49,7 +49,7 @@ async function ensureStagingPrCore({
 
   const branch = await ticketMatcher.findBranchForTicket(ticketKey);
   if (!branch) {
-    eventsRepo.insertEvent({
+    await eventsRepo.insertEvent({
       ticketKey,
       trigger,
       action: 'pr:staging',
@@ -65,7 +65,7 @@ async function ensureStagingPrCore({
     return { outcome: OUTCOMES.NOTED };
   }
 
-  ticketsRepo.setGithubFacts(ticketKey, { branchName: branch });
+  await ticketsRepo.setGithubFacts(ticketKey, { branchName: branch });
 
   let pr = await ticketMatcher.findOpenPrForTicket(ticketKey, { base: stagingBranch });
   let created = false;
@@ -80,8 +80,8 @@ async function ensureStagingPrCore({
     created = true;
   }
 
-  ticketsRepo.setGithubFacts(ticketKey, { prNumber: pr.number, prState: 'open' });
-  ticketsRepo.setPipelineState(ticketKey, PIPELINE_STATES.STAGING_QUEUED);
+  await ticketsRepo.setGithubFacts(ticketKey, { prNumber: pr.number, prState: 'open' });
+  await ticketsRepo.setPipelineState(ticketKey, PIPELINE_STATES.STAGING_QUEUED);
   try {
     await jira.addComment(ticketKey, JIRA_COMMENTS.STAGING_PR_OPENED(pr.number, stagingBranch));
   } catch (err) {
@@ -95,7 +95,7 @@ async function ensureStagingPrCore({
     log,
   });
   await assignDefaultQa();
-  eventsRepo.insertEvent({
+  await eventsRepo.insertEvent({
     ticketKey,
     trigger,
     action: 'pr:staging',

@@ -32,7 +32,7 @@ async function ensureDevelopPrCore({
   if (!pr) {
     const branch = await ticketMatcher.findBranchForTicket(ticketKey);
     if (!branch) {
-      eventsRepo.insertEvent({
+      await eventsRepo.insertEvent({
         ticketKey,
         trigger,
         action: 'pr:develop',
@@ -55,14 +55,14 @@ async function ensureDevelopPrCore({
     created = true;
   }
 
-  ticketsRepo.setGithubFacts(ticketKey, { branchName: pr.head.ref, prNumber: pr.number, prState: 'open', headSha: pr.head.sha });
+  await ticketsRepo.setGithubFacts(ticketKey, { branchName: pr.head.ref, prNumber: pr.number, prState: 'open', headSha: pr.head.sha });
 
   if (pr.head.sha) {
     const status = await github.getCombinedStatus(pr.head.sha).catch(() => null);
-    if (status) ticketsRepo.setCheckStatus(ticketKey, status.overall);
+    if (status) await ticketsRepo.setCheckStatus(ticketKey, status.overall);
   }
 
-  ticketsRepo.setPipelineState(ticketKey, PIPELINE_STATES.QUEUED);
+  await ticketsRepo.setPipelineState(ticketKey, PIPELINE_STATES.QUEUED);
   try {
     await jira.addComment(ticketKey, JIRA_COMMENTS.DEVELOP_PR_OPENED(pr.number, productionBranch));
   } catch (err) {
@@ -87,7 +87,7 @@ async function ensureDevelopPrCore({
     repoOwner,
     repoName,
   });
-  eventsRepo.insertEvent({
+  await eventsRepo.insertEvent({
     ticketKey,
     trigger,
     action: 'pr:develop',

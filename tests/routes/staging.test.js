@@ -6,9 +6,9 @@ const { HttpError } = require('../../src/clients/github');
 
 const REPO = { owner: 'acme', name: 'widgets' };
 
-function buildTestCtx() {
-  const { ticketsRepo, eventsRepo, cursorRepo, lockManager, reposRepo } = createTestDb();
-  reposRepo.add(REPO.owner, REPO.name);
+async function buildTestCtx() {
+  const { ticketsRepo, eventsRepo, cursorRepo, lockManager, reposRepo } = await createTestDb();
+  await reposRepo.add(REPO.owner, REPO.name);
 
   const github = {
     rateLimit: {},
@@ -33,19 +33,19 @@ function buildTestCtx() {
 
 describe('POST /api/staging/reset', () => {
   it('401s without a bearer token', async () => {
-    const app = createApp(buildTestCtx());
+    const app = createApp(await buildTestCtx());
     const res = await request(app).post('/api/staging/reset').send(REPO);
     expect(res.status).toBe(401);
   });
 
   it('401s with the wrong token', async () => {
-    const app = createApp(buildTestCtx());
+    const app = createApp(await buildTestCtx());
     const res = await request(app).post('/api/staging/reset').set('Authorization', 'Bearer wrong').send(REPO);
     expect(res.status).toBe(401);
   });
 
   it('400s when owner/name are missing', async () => {
-    const app = createApp(buildTestCtx());
+    const app = createApp(await buildTestCtx());
     const res = await request(app)
       .post('/api/staging/reset')
       .set('Authorization', `Bearer ${config.API_TOKEN}`)
@@ -55,7 +55,7 @@ describe('POST /api/staging/reset', () => {
   });
 
   it('400s when the repo is not watched', async () => {
-    const app = createApp(buildTestCtx());
+    const app = createApp(await buildTestCtx());
     const res = await request(app)
       .post('/api/staging/reset')
       .set('Authorization', `Bearer ${config.API_TOKEN}`)
@@ -65,11 +65,11 @@ describe('POST /api/staging/reset', () => {
   });
 
   it('clears stale pr_number/check_status on tickets swept from staging/conflict back to unmerged', async () => {
-    const ctx = buildTestCtx();
-    ctx.ticketsRepo.upsert({ key: 'PROJ-1', jiraStatus: 'In QA', pipelineState: 'staging', repoOwner: REPO.owner, repoName: REPO.name });
-    ctx.ticketsRepo.setGithubFacts('PROJ-1', { prNumber: 1, prState: 'merged', checkStatus: 'passing', headSha: 'sha1' });
-    ctx.ticketsRepo.upsert({ key: 'PROJ-2', jiraStatus: 'In QA', pipelineState: 'conflict', repoOwner: REPO.owner, repoName: REPO.name });
-    ctx.ticketsRepo.setGithubFacts('PROJ-2', { prNumber: 4, prState: 'open', checkStatus: 'pending', headSha: 'sha2' });
+    const ctx = await buildTestCtx();
+    await ctx.ticketsRepo.upsert({ key: 'PROJ-1', jiraStatus: 'In QA', pipelineState: 'staging', repoOwner: REPO.owner, repoName: REPO.name });
+    await ctx.ticketsRepo.setGithubFacts('PROJ-1', { prNumber: 1, prState: 'merged', checkStatus: 'passing', headSha: 'sha1' });
+    await ctx.ticketsRepo.upsert({ key: 'PROJ-2', jiraStatus: 'In QA', pipelineState: 'conflict', repoOwner: REPO.owner, repoName: REPO.name });
+    await ctx.ticketsRepo.setGithubFacts('PROJ-2', { prNumber: 4, prState: 'open', checkStatus: 'pending', headSha: 'sha2' });
     const app = createApp(ctx);
 
     const res = await request(app)
@@ -79,7 +79,7 @@ describe('POST /api/staging/reset', () => {
 
     expect(res.status).toBe(200);
     for (const key of ['PROJ-1', 'PROJ-2']) {
-      const row = ctx.ticketsRepo.get(key);
+      const row = await ctx.ticketsRepo.get(key);
       expect(row.pipeline_state).toBe('unmerged');
       expect(row.pr_number).toBeNull();
       expect(row.check_status).toBeNull();
@@ -87,7 +87,7 @@ describe('POST /api/staging/reset', () => {
   });
 
   it('force-updates staging to develop and records a RESET event', async () => {
-    const ctx = buildTestCtx();
+    const ctx = await buildTestCtx();
     const app = createApp(ctx);
 
     const res = await request(app)
@@ -101,14 +101,14 @@ describe('POST /api/staging/reset', () => {
     expect(res.body.newHeadSha).toBe('develop-sha');
     expect(ctx.github.updateRef).toHaveBeenCalledWith('staging', 'develop-sha', { force: true });
 
-    const { events } = ctx.eventsRepo.list({ outcome: 'RESET' });
+    const { events } = await ctx.eventsRepo.list({ outcome: 'RESET' });
     expect(events).toHaveLength(1);
     expect(events[0].repo).toEqual(REPO);
   });
 
   it('opens a reset PR when staging is branch-protected and leaves ticket state alone', async () => {
-    const ctx = buildTestCtx();
-    ctx.ticketsRepo.upsert({
+    const ctx = await buildTestCtx();
+    await ctx.ticketsRepo.upsert({
       key: 'PROJ-1',
       jiraStatus: 'In QA',
       pipelineState: 'staging',

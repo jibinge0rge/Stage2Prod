@@ -67,17 +67,18 @@ class Poller {
     let ok = true;
     let errorMessage = null;
     try {
-      const jql = buildPollJql(this.reposRepo.list({ activeOnly: true }), this.config);
+      const jql = buildPollJql(await this.reposRepo.list({ activeOnly: true }), this.config);
       const searchResult = await this.jira.search(jql);
       const issues = searchResult.issues || [];
       this.repoResolver.invalidateAll();
 
       for (const issue of issues) {
-        this.ticketsRepo.upsert({
+        // eslint-disable-next-line no-await-in-loop
+        await this.ticketsRepo.upsert({
           key: issue.key,
           summary: issue.fields.summary,
           jiraStatus: issue.fields.status.name,
-          lastSeenStatus: this.ticketsRepo.getLastSeenStatus(issue.key) ?? issue.fields.status.name,
+          lastSeenStatus: (await this.ticketsRepo.getLastSeenStatus(issue.key)) ?? issue.fields.status.name,
           assigneeName: issue.fields.assignee ? issue.fields.assignee.displayName : null,
           assigneeAvatarUrl: issue.fields.assignee ? issue.fields.assignee.avatarUrls?.['48x48'] : null,
           sprintName: sprintNameFromIssue(issue),
@@ -89,14 +90,23 @@ class Poller {
         // Jira project key unambiguously maps to exactly one watched
         // repo. Cheap (DB-only, no GitHub calls), so safe to do for every
         // ticket on every tick, including ones with no mapped handler.
-        const row = this.ticketsRepo.get(issue.key);
+        // eslint-disable-next-line no-await-in-loop
+        const row = await this.ticketsRepo.get(issue.key);
         if (!row.repo_owner) {
-          const match = this.repoResolver.matchByProjectKeyOnly(issue.key);
-          if (match) this.ticketsRepo.setRepo(issue.key, match.owner, match.name);
+          const match = await this.repoResolver.matchByProjectKeyOnly(issue.key);
+          if (match) await this.ticketsRepo.setRepo(issue.key, match.owner, match.name);
         }
       }
 
-      const events = diffIssues(issues, (key) => this.ticketsRepo.getLastSeenStatus(key));
+      // Reflects last_seen_status as stored after the upsert loop above
+      // (unchanged for existing tickets, backfilled to the current status
+      // for brand-new ones) — fetched in bulk up front so diffIssues can
+      // stay a pure, synchronous lookup.
+      const lastSeenEntries = await Promise.all(
+        issues.map(async (issue) => [issue.key, await this.ticketsRepo.getLastSeenStatus(issue.key)])
+      );
+      const lastSeenByKey = new Map(lastSeenEntries);
+      const events = diffIssues(issues, (key) => lastSeenByKey.get(key));
       for (const event of events) {
         // eslint-disable-next-line no-await-in-loop
         await this._processOne(event);
@@ -104,11 +114,11 @@ class Poller {
 
       if (events.length) {
         const newestHandled = events[events.length - 1].jiraUpdatedAt;
-        this.cursorRepo.setCursor(newestHandled);
+        await this.cursorRepo.setCursor(newestHandled);
       }
 
       if (this.jira.rateLimit) {
-        this.cursorRepo.setJiraRateLimit({
+        await this.cursorRepo.setJiraRateLimit({
           remaining: this.jira.rateLimit.remaining,
           resetAt: this.jira.rateLimit.resetAt,
         });
@@ -118,7 +128,7 @@ class Poller {
       errorMessage = err.message;
       this.logger.error({ err: err.message }, 'poll failed');
     }
-    this.cursorRepo.recordPoll({ ok, error: errorMessage });
+    await this.cursorRepo.recordPoll({ ok, error: errorMessage });
   }
 
   async _processOne(event) {
@@ -127,21 +137,21 @@ class Poller {
 
     // Prefer the ticket's known repo, then the Jira project key → watched
     // repo mapping, so each project can use its own status→action map.
-    const ticketRow = this.ticketsRepo.get(event.ticketKey);
+    const ticketRow = await this.ticketsRepo.get(event.ticketKey);
     let mapSource = null;
     if (ticketRow?.repo_owner) {
-      mapSource = this.reposRepo.get(ticketRow.repo_owner, ticketRow.repo_name);
+      mapSource = await this.reposRepo.get(ticketRow.repo_owner, ticketRow.repo_name);
     }
     if (!mapSource) {
-      const byProject = this.repoResolver.matchByProjectKeyOnly(event.ticketKey);
-      if (byProject) mapSource = this.reposRepo.get(byProject.owner, byProject.name);
+      const byProject = await this.repoResolver.matchByProjectKeyOnly(event.ticketKey);
+      if (byProject) mapSource = await this.reposRepo.get(byProject.owner, byProject.name);
     }
 
     const handler = dispatch(event.newStatus, mapSource?.effectiveStatusHandlerMap || mapSource?.statusHandlerMap);
 
     if (!handler) {
       log.info({ status: event.newStatus }, 'status change has no mapped handler, recording only');
-      this.ticketsRepo.setLastSeenStatus(event.ticketKey, event.newStatus);
+      await this.ticketsRepo.setLastSeenStatus(event.ticketKey, event.newStatus);
       return;
     }
 
@@ -155,7 +165,7 @@ class Poller {
               .map((c) => `${c.owner}/${c.name}`)
               .join(', ')}) — resolve manually by making the branch name unique or unwatching one of the repos.`
           : `No branch or open PR containing "${event.ticketKey}" was found in any watched repo.`;
-        this.eventsRepo.insertEvent({
+        await this.eventsRepo.insertEvent({
           ticketKey: event.ticketKey,
           trigger: 'Poll · status change',
           action: 'resolve-repo',
@@ -165,13 +175,13 @@ class Poller {
           correlationId,
         });
         log.warn({ ambiguous: !!resolution.ambiguous }, 'could not resolve ticket to a single watched repo');
-        this.ticketsRepo.setLastSeenStatus(event.ticketKey, event.newStatus);
+        await this.ticketsRepo.setLastSeenStatus(event.ticketKey, event.newStatus);
         return;
       }
 
       const { owner: repoOwner, name: repoName } = resolution;
-      this.ticketsRepo.setRepo(event.ticketKey, repoOwner, repoName);
-      const repoConfig = this.reposRepo.get(repoOwner, repoName);
+      await this.ticketsRepo.setRepo(event.ticketKey, repoOwner, repoName);
+      const repoConfig = await this.reposRepo.get(repoOwner, repoName);
 
       await handler({
         event,
@@ -192,7 +202,7 @@ class Poller {
       });
     } catch (err) {
       log.error({ err: err.message }, 'handler failed');
-      this.eventsRepo.insertEvent({
+      await this.eventsRepo.insertEvent({
         ticketKey: event.ticketKey,
         trigger: 'Poll · status change',
         action: 'error',
@@ -205,7 +215,7 @@ class Poller {
     // Last-seen status advances even on failure so a permanently-broken
     // transition doesn't retry forever; failures stay visible via
     // /api/events and are manually retryable from the ticket drawer.
-    this.ticketsRepo.setLastSeenStatus(event.ticketKey, event.newStatus);
+    await this.ticketsRepo.setLastSeenStatus(event.ticketKey, event.newStatus);
   }
 
   async stop() {

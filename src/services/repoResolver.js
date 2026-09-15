@@ -29,17 +29,18 @@ function createRepoResolver({ reposRepo, githubRegistry }) {
    * repo as soon as it's ever seen (visibility), not only once a status
    * transition actually gets processed.
    */
-  function matchReposByProjectKey(ticketKey, activeRepos = reposRepo.list({ activeOnly: true })) {
+  async function matchReposByProjectKey(ticketKey, activeRepos) {
+    const repos = activeRepos || (await reposRepo.list({ activeOnly: true }));
     const projectKey = projectKeyFromTicket(ticketKey);
-    return activeRepos.filter((r) => r.jiraProjectKey === projectKey);
+    return repos.filter((r) => r.jiraProjectKey === projectKey);
   }
 
   /**
    * Unambiguous project-key-only match, or null (no match, or 2+ repos
    * share the key — genuinely ambiguous without a branch/PR search).
    */
-  function matchByProjectKeyOnly(ticketKey) {
-    const matches = matchReposByProjectKey(ticketKey);
+  async function matchByProjectKeyOnly(ticketKey) {
+    const matches = await matchReposByProjectKey(ticketKey);
     return matches.length === 1 ? { owner: matches[0].owner, name: matches[0].name } : null;
   }
 
@@ -52,18 +53,18 @@ function createRepoResolver({ reposRepo, githubRegistry }) {
    *        | {found:false, ambiguous:true, candidates:[{owner,name}]}
    */
   async function resolveTicket(ticketKey, knownRepo) {
-    if (knownRepo && reposRepo.isActive(knownRepo.owner, knownRepo.name)) {
+    if (knownRepo && (await reposRepo.isActive(knownRepo.owner, knownRepo.name))) {
       return { found: true, owner: knownRepo.owner, name: knownRepo.name };
     }
 
-    const activeRepos = reposRepo.list({ activeOnly: true });
+    const activeRepos = await reposRepo.list({ activeOnly: true });
 
     // Fast path: the ticket's Jira project key maps to exactly one
     // watched repo — no GitHub calls needed at all. If it maps to more
     // than one (e.g. a monorepo split across GitHub repos sharing one
     // Jira project), narrow the branch/PR search to just those instead
     // of searching every watched repo.
-    const byProjectKey = matchReposByProjectKey(ticketKey, activeRepos);
+    const byProjectKey = await matchReposByProjectKey(ticketKey, activeRepos);
     if (byProjectKey.length === 1) {
       return { found: true, owner: byProjectKey[0].owner, name: byProjectKey[0].name };
     }

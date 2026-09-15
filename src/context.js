@@ -18,8 +18,8 @@ const { Poller } = require('./poller');
  * Accepts overrides so tests can substitute an in-memory DB and/or mocked
  * clients while reusing all the real wiring logic.
  */
-function buildContext(config, overrides = {}) {
-  const db = overrides.db || createDb(config.DB_PATH);
+async function buildContext(config, overrides = {}) {
+  const db = overrides.db || (await createDb(config.DATABASE_URL));
   const ticketsRepo = overrides.ticketsRepo || createTicketsRepo(db);
   const eventsRepo = overrides.eventsRepo || createEventsRepo(db);
   const cursorRepo = overrides.cursorRepo || createCursorRepo(db);

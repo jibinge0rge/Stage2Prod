@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS production_cuts (
-  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  id            SERIAL PRIMARY KEY,
   repo_owner    TEXT NOT NULL,
   repo_name     TEXT NOT NULL,
   branch_name   TEXT NOT NULL,

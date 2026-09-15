@@ -19,20 +19,20 @@ async function syncPipelineWithPrMergeability(row, { ticketsRepo, reposRepo, git
   const pr = await github.getPr(row.pr_number).catch(() => null);
   if (!pr || pr.state !== 'open') return row.pipeline_state;
 
-  const repoConfig = reposRepo?.get(row.repo_owner, row.repo_name);
+  const repoConfig = await reposRepo?.get(row.repo_owner, row.repo_name);
   const stagingBranch = repoConfig?.stagingBranch ?? 'staging';
   const hasFileConflict = pr.mergeable === false || pr.mergeableState === 'dirty';
 
   if (hasFileConflict) {
     if (row.pipeline_state !== PIPELINE_STATES.CONFLICT) {
-      ticketsRepo.setPipelineState(row.ticket_key, PIPELINE_STATES.CONFLICT);
+      await ticketsRepo.setPipelineState(row.ticket_key, PIPELINE_STATES.CONFLICT);
     }
     return PIPELINE_STATES.CONFLICT;
   }
 
   if (row.pipeline_state === PIPELINE_STATES.CONFLICT) {
     const restored = pr.base === stagingBranch ? PIPELINE_STATES.STAGING_QUEUED : PIPELINE_STATES.QUEUED;
-    ticketsRepo.setPipelineState(row.ticket_key, restored);
+    await ticketsRepo.setPipelineState(row.ticket_key, restored);
     return restored;
   }
 

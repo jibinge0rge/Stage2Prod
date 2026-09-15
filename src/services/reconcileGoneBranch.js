@@ -52,14 +52,14 @@ async function reconcileGoneBranch({
 
   const ticketKey = row.ticket_key;
   const goneBranch = row.branch_name;
-  const repoConfig = reposRepo?.get?.(row.repo_owner, row.repo_name);
+  const repoConfig = await reposRepo?.get?.(row.repo_owner, row.repo_name);
   const statusMap = repoConfig?.effectiveStatusHandlerMap || repoConfig?.statusHandlerMap;
   const openNames = namesForStage('open', statusMap);
   const openStatus = openNames[0] || jiraStatusForStage('open', statusMap);
 
-  ticketsRepo.clearFeatureWork(ticketKey);
+  await ticketsRepo.clearFeatureWork(ticketKey);
 
-  eventsRepo?.insertEvent?.({
+  await eventsRepo?.insertEvent?.({
     ticketKey,
     trigger,
     action: 'reset',

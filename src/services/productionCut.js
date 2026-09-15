@@ -67,8 +67,9 @@ function commitText(commit) {
   return [commit?.commit?.message, commit?.html_url, commit?.sha].filter(Boolean).join('\n');
 }
 
-function ticketsForRepo(ticketsRepo, owner, name) {
-  return ticketsRepo.list().filter((t) => t.repo_owner === owner && t.repo_name === name);
+async function ticketsForRepo(ticketsRepo, owner, name) {
+  const all = await ticketsRepo.list();
+  return all.filter((t) => t.repo_owner === owner && t.repo_name === name);
 }
 
 /**
@@ -76,15 +77,17 @@ function ticketsForRepo(ticketsRepo, owner, name) {
  * landed on staging since the previous production cut (or configured
  * production branch, if this is the first cut).
  */
-function ticketsFromCommits(commits, { ticketsRepo, owner, name }) {
-  const repoTickets = ticketsForRepo(ticketsRepo, owner, name);
+async function ticketsFromCommits(commits, { ticketsRepo, owner, name }) {
+  const repoTickets = await ticketsForRepo(ticketsRepo, owner, name);
   const found = new Map();
 
   for (const commit of commits || []) {
     const text = commitText(commit);
     for (const key of ticketKeysInText(text)) {
-      const row = ticketsRepo.get(key);
-      if (row && !found.has(key)) found.set(key, row);
+      if (found.has(key)) continue;
+      // eslint-disable-next-line no-await-in-loop
+      const row = await ticketsRepo.get(key);
+      if (row) found.set(key, row);
     }
     for (const row of repoTickets) {
       if (found.has(row.ticket_key)) continue;
@@ -101,12 +104,14 @@ function ticketsFromCommits(commits, { ticketsRepo, owner, name }) {
   }));
 }
 
-function trackedTickets(tickets, ticketsRepo) {
-  return (tickets || []).filter((t) => t?.key && ticketsRepo?.get?.(t.key));
+async function trackedTickets(tickets, ticketsRepo) {
+  const list = tickets || [];
+  const rows = await Promise.all(list.map((t) => (t?.key ? ticketsRepo?.get?.(t.key) : null)));
+  return list.filter((_, i) => Boolean(rows[i]));
 }
 
-function summarizeCut(cut, { isLatest = false, ticketsRepo } = {}) {
-  const tickets = trackedTickets(cut.tickets, ticketsRepo);
+async function summarizeCut(cut, { isLatest = false, ticketsRepo } = {}) {
+  const tickets = await trackedTickets(cut.tickets, ticketsRepo);
   return {
     id: cut.id,
     branchName: cut.branchName,
@@ -119,26 +124,28 @@ function summarizeCut(cut, { isLatest = false, ticketsRepo } = {}) {
   };
 }
 
-function hydrateCut(cut, ticketsRepo) {
-  const tickets = trackedTickets(cut.tickets, ticketsRepo).map((t) => {
-    const row = ticketsRepo.get(t.key);
-    return {
-      key: t.key,
-      summary: row?.summary || t.summary || null,
-      pipelineState: row?.pipeline_state || t.pipelineState || null,
-    };
-  });
+async function hydrateCut(cut, ticketsRepo) {
+  const tracked = await trackedTickets(cut.tickets, ticketsRepo);
+  const tickets = await Promise.all(
+    tracked.map(async (t) => {
+      const row = await ticketsRepo.get(t.key);
+      return {
+        key: t.key,
+        summary: row?.summary || t.summary || null,
+        pipelineState: row?.pipeline_state || t.pipelineState || null,
+      };
+    })
+  );
   return { ...cut, tickets, ticketCount: tickets.length };
 }
 
-function listedReleaseCuts(owner, name, cutsRepo) {
-  return (cutsRepo?.list(owner, name) || [])
-    .filter((cut) => isReleaseCutName(cut.branchName))
-    .sort(sortReleaseCutsNewestFirst);
+async function listedReleaseCuts(owner, name, cutsRepo) {
+  const list = (await cutsRepo?.list(owner, name)) || [];
+  return list.filter((cut) => isReleaseCutName(cut.branchName)).sort(sortReleaseCutsNewestFirst);
 }
 
 async function previousTip({ repo, cutsRepo }) {
-  const existing = listedReleaseCuts(repo.owner, repo.name, cutsRepo);
+  const existing = await listedReleaseCuts(repo.owner, repo.name, cutsRepo);
   if (existing[0]) {
     return { sha: existing[0].sha, from: existing[0].branchName };
   }
@@ -153,7 +160,7 @@ async function changelogFromStaging({
   ticketsRepo,
   repoResolver,
 }) {
-  const repo = reposRepo.get(owner, name);
+  const repo = await reposRepo.get(owner, name);
   if (!repo || !repo.active) {
     const err = new Error(`${owner}/${name} is not a watched repo`);
     err.status = 404;
@@ -176,15 +183,14 @@ async function changelogFromStaging({
     commits = [];
   }
 
-  let tickets = ticketsFromCommits(commits, { ticketsRepo, owner, name });
+  let tickets = await ticketsFromCommits(commits, { ticketsRepo, owner, name });
   if (!previous.sha && tickets.length === 0) {
-    tickets = ticketsRepo
-      .listByPipelineStateAndRepo('staging', owner, name)
-      .map((row) => ({
-        key: row.ticket_key,
-        summary: row.summary || null,
-        pipelineState: row.pipeline_state,
-      }));
+    const staged = await ticketsRepo.listByPipelineStateAndRepo('staging', owner, name);
+    tickets = staged.map((row) => ({
+      key: row.ticket_key,
+      summary: row.summary || null,
+      pipelineState: row.pipeline_state,
+    }));
   }
 
   return {
@@ -202,7 +208,8 @@ async function changelogFromStaging({
 async function uniqueDefaultName({ github, cutsRepo, owner, name, base }) {
   let candidate = base;
   let n = 2;
-  while (cutsRepo.getByBranch(owner, name, candidate) || (await shaOrNull(github, candidate))) {
+  // eslint-disable-next-line no-await-in-loop
+  while ((await cutsRepo.getByBranch(owner, name, candidate)) || (await shaOrNull(github, candidate))) {
     candidate = `${base}-${n}`;
     n += 1;
     if (n > 50) {
@@ -230,7 +237,7 @@ async function createProductionCut({
   correlationId,
   trigger = 'POST /api/repos/:owner/:name/cuts',
 }) {
-  const repo = reposRepo.get(owner, name);
+  const repo = await reposRepo.get(owner, name);
   if (!repo || !repo.active) {
     const err = new Error(`${owner}/${name} is not a watched repo`);
     err.status = 404;
@@ -263,7 +270,7 @@ async function createProductionCut({
   if (nameToUse === repo.stagingBranch) {
     throw new CutNotReadyError(`cut branch cannot be this repo's staging branch ("${repo.stagingBranch}")`);
   }
-  if (cutsRepo.getByBranch(owner, name, nameToUse)) {
+  if (await cutsRepo.getByBranch(owner, name, nameToUse)) {
     throw new CutNotReadyError(`a production cut named "${nameToUse}" already exists`);
   }
   if (await shaOrNull(github, nameToUse)) {
@@ -283,7 +290,7 @@ async function createProductionCut({
       throw err;
     }
 
-    const cut = cutsRepo.insert({
+    const cut = await cutsRepo.insert({
       repoOwner: owner,
       repoName: name,
       branchName: nameToUse,
@@ -293,7 +300,7 @@ async function createProductionCut({
       tickets: changelog.tickets,
     });
 
-    eventsRepo.insertEvent({
+    await eventsRepo.insertEvent({
       trigger,
       action: 'create-cut',
       outcome: OUTCOMES.NOTED,
@@ -321,10 +328,9 @@ async function createProductionCut({
   return run();
 }
 
-function listCutsForRepo(owner, name, cutsRepo, ticketsRepo) {
-  return listedReleaseCuts(owner, name, cutsRepo).map((cut, i) =>
-    summarizeCut(cut, { isLatest: i === 0, ticketsRepo })
-  );
+async function listCutsForRepo(owner, name, cutsRepo, ticketsRepo) {
+  const cuts = await listedReleaseCuts(owner, name, cutsRepo);
+  return Promise.all(cuts.map((cut, i) => summarizeCut(cut, { isLatest: i === 0, ticketsRepo })));
 }
 
 /**
@@ -359,21 +365,30 @@ async function syncReleaseCutsFromGithub({
   const oldestFirst = [...releaseBranches].reverse();
   let previousSha = null;
   for (const branch of oldestFirst) {
+    // eslint-disable-next-line no-await-in-loop
     const sha = branch.commit?.sha || (await shaOrNull(github, branch.name));
     if (!sha) continue;
-    const existing = cutsRepo.getByBranch(owner, name, branch.name);
-    const storedUntracked = (existing?.tickets || []).some((t) => !ticketsRepo?.get?.(t.key));
+    // eslint-disable-next-line no-await-in-loop
+    const existing = await cutsRepo.getByBranch(owner, name, branch.name);
+    // eslint-disable-next-line no-await-in-loop
+    const storedTicketRows = existing
+      ? await Promise.all((existing.tickets || []).map((t) => ticketsRepo?.get?.(t.key)))
+      : [];
+    const storedUntracked = storedTicketRows.some((row) => !row);
     const needsTickets = !existing || existing.sha !== sha || !(existing.tickets || []).length || storedUntracked;
     let tickets = existing?.tickets || [];
     if (needsTickets) {
       let commits = [];
       if (previousSha && previousSha !== sha && typeof github.listCommitsAhead === 'function') {
+        // eslint-disable-next-line no-await-in-loop
         commits = await github.listCommitsAhead(previousSha, branch.name).catch(() => []);
       }
-      tickets = ticketsFromCommits(commits, { ticketsRepo, owner, name });
+      // eslint-disable-next-line no-await-in-loop
+      tickets = await ticketsFromCommits(commits, { ticketsRepo, owner, name });
     }
     if (!existing) {
-      cutsRepo.insert({
+      // eslint-disable-next-line no-await-in-loop
+      await cutsRepo.insert({
         repoOwner: owner,
         repoName: name,
         branchName: branch.name,
@@ -383,7 +398,8 @@ async function syncReleaseCutsFromGithub({
         tickets,
       });
     } else if (existing.sha !== sha || storedUntracked || (!(existing.tickets || []).length && tickets.length)) {
-      cutsRepo.update(existing.id, { sha, previousSha, tickets });
+      // eslint-disable-next-line no-await-in-loop
+      await cutsRepo.update(existing.id, { sha, previousSha, tickets });
     }
     previousSha = sha;
   }

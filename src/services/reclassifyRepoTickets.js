@@ -39,10 +39,10 @@ async function reconcileTicketPr({
   const name = row.repo_name;
 
   if (missingPr) {
-    ticketsRepo.clearGithubFacts(ticketKey);
-    ticketsRepo.setPipelineState(ticketKey, PIPELINE_STATES.UNMERGED);
+    await ticketsRepo.clearGithubFacts(ticketKey);
+    await ticketsRepo.setPipelineState(ticketKey, PIPELINE_STATES.UNMERGED);
     if (eventsRepo) {
-      eventsRepo.insertEvent({
+      await eventsRepo.insertEvent({
         ticketKey,
         trigger,
         action: 'reclassify',
@@ -62,10 +62,10 @@ async function reconcileTicketPr({
   if (nextState === previousState) return null;
 
   if (!nextState) {
-    ticketsRepo.clearGithubFacts(ticketKey);
-    ticketsRepo.setPipelineState(ticketKey, PIPELINE_STATES.UNMERGED);
+    await ticketsRepo.clearGithubFacts(ticketKey);
+    await ticketsRepo.setPipelineState(ticketKey, PIPELINE_STATES.UNMERGED);
     if (eventsRepo) {
-      eventsRepo.insertEvent({
+      await eventsRepo.insertEvent({
         ticketKey,
         trigger,
         action: 'reclassify',
@@ -95,15 +95,15 @@ async function reconcileTicketPr({
     };
   }
 
-  ticketsRepo.setPipelineState(ticketKey, nextState);
-  ticketsRepo.setGithubFacts(ticketKey, {
+  await ticketsRepo.setPipelineState(ticketKey, nextState);
+  await ticketsRepo.setGithubFacts(ticketKey, {
     branchName: pr.head,
     prNumber: pr.number,
     prState: pr.merged ? 'merged' : pr.state,
     headSha: pr.headSha ?? null,
   });
   if (eventsRepo) {
-    eventsRepo.insertEvent({
+    await eventsRepo.insertEvent({
       ticketKey,
       trigger,
       action: 'reclassify',
@@ -167,8 +167,8 @@ async function reclassifyRepoTickets({
   const github = repoResolver.getClient(owner, name);
   if (!github || typeof github.getPr !== 'function') return [];
 
-  const candidates = ticketsRepo
-    .list()
+  const allTickets = await ticketsRepo.list();
+  const candidates = allTickets
     .filter((t) => t.repo_owner === owner && t.repo_name === name && isReclassifyCandidate(t));
 
   const changes = [];
@@ -242,7 +242,7 @@ async function reconcileOpenPrBases(rows, { ticketsRepo, reposRepo, repoResolver
   const logger = log || { warn() {} };
   await Promise.all(
     rows.filter(isReclassifyCandidate).map(async (row) => {
-      const repoConfig = reposRepo.get(row.repo_owner, row.repo_name);
+      const repoConfig = await reposRepo.get(row.repo_owner, row.repo_name);
       if (!repoConfig) return;
       const github = repoResolver.getClient(row.repo_owner, row.repo_name);
       if (!github || typeof github.getPr !== 'function') return;
@@ -264,7 +264,7 @@ async function reconcileOpenPrBases(rows, { ticketsRepo, reposRepo, repoResolver
         row.head_sha = null;
         row.check_status = null;
       } else {
-        const fresh = ticketsRepo.get(row.ticket_key);
+        const fresh = await ticketsRepo.get(row.ticket_key);
         if (fresh) {
           row.pr_number = fresh.pr_number;
           row.pr_state = fresh.pr_state;

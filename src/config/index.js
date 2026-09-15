@@ -1,4 +1,3 @@
-const path = require('path');
 require('dotenv').config();
 
 function bool(value, fallback) {
@@ -38,9 +37,7 @@ const config = Object.freeze({
   POLL_INTERVAL_MS: int(process.env.POLL_INTERVAL_MS, 60000),
   API_TOKEN: process.env.API_TOKEN || 'local-dev-token',
   DRY_RUN: bool(process.env.DRY_RUN, false),
-  DB_PATH: process.env.DB_PATH
-    ? path.resolve(process.cwd(), process.env.DB_PATH)
-    : path.resolve(process.cwd(), 'data/stage2prod.db'),
+  DATABASE_URL: process.env.DATABASE_URL || 'postgres://stage2prod:stage2prod@localhost:5432/stage2prod',
   LOG_LEVEL: process.env.LOG_LEVEL || 'info',
 });
 

@@ -14,10 +14,10 @@ const { emptyTeamRoles, normalizePerson } = require('../lib/teamRoles');
 const { stageForJiraStatus } = require('../lib/statusHandlerMap');
 const { assignTicketToRole } = require('../lib/assignTicket');
 
-function rowToApi(row, reposRepo) {
+async function rowToApi(row, reposRepo) {
   let repo = null;
   if (row.repo_owner) {
-    const repoConfig = reposRepo.get(row.repo_owner, row.repo_name);
+    const repoConfig = await reposRepo.get(row.repo_owner, row.repo_name);
     repo = {
       owner: row.repo_owner,
       name: row.repo_name,
@@ -54,7 +54,7 @@ async function refreshPendingChecks(rows, { ticketsRepo, repoResolver }) {
         if (typeof github.getCombinedStatus !== 'function') return;
         const status = await github.getCombinedStatus(r.head_sha).catch(() => null);
         if (!status) return;
-        ticketsRepo.setCheckStatus(r.ticket_key, status.overall);
+        await ticketsRepo.setCheckStatus(r.ticket_key, status.overall);
         r.check_status = status.overall;
       })
   );
@@ -66,7 +66,7 @@ function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller,
   router.get('/tickets', async (req, res, next) => {
     try {
       const { state, q, repo } = req.query;
-      let rows = ticketsRepo.list();
+      let rows = await ticketsRepo.list();
       if (repo) {
         const [repoOwner, repoName] = String(repo).split('/');
         rows = rows.filter((r) => r.repo_owner === repoOwner && r.repo_name === repoName);
@@ -88,18 +88,19 @@ function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller,
         );
       }
       await refreshPendingChecks(rows, { ticketsRepo, repoResolver });
-      res.json({ tickets: rows.map((r) => rowToApi(r, reposRepo)), total: rows.length });
+      const tickets = await Promise.all(rows.map((r) => rowToApi(r, reposRepo)));
+      res.json({ tickets, total: rows.length });
     } catch (err) {
       next(err);
     }
   });
 
   router.get('/tickets/:key', async (req, res, next) => {
-    let row = ticketsRepo.get(req.params.key);
+    let row = await ticketsRepo.get(req.params.key);
     if (!row) return res.status(404).json({ error: 'not_found', message: `no ticket ${req.params.key}` });
     try {
       await reconcileOpenPrBases([row], { ticketsRepo, reposRepo, repoResolver, log: logger });
-      row = ticketsRepo.get(req.params.key);
+      row = await ticketsRepo.get(req.params.key);
       await reconcileGoneBranch({
         row,
         ticketsRepo,
@@ -109,13 +110,16 @@ function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller,
         jira,
         log: logger,
       });
-      row = ticketsRepo.get(req.params.key);
+      row = await ticketsRepo.get(req.params.key);
     } catch (err) {
       return next(err);
     }
-    const body = { ...rowToApi(row, reposRepo), timeline: eventsRepo.timelineForTicket(req.params.key) };
+    const body = {
+      ...(await rowToApi(row, reposRepo)),
+      timeline: await eventsRepo.timelineForTicket(req.params.key),
+    };
     if (row.branch_name && row.repo_owner) {
-      const repoConfig = reposRepo.get(row.repo_owner, row.repo_name);
+      const repoConfig = await reposRepo.get(row.repo_owner, row.repo_name);
       const github = repoResolver.getClient(row.repo_owner, row.repo_name);
       try {
         const diff = await compareBranchToTargets({
@@ -129,7 +133,7 @@ function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller,
         if (row.head_sha && typeof github.getCombinedStatus === 'function') {
           const status = await github.getCombinedStatus(row.head_sha).catch(() => null);
           if (status) {
-            ticketsRepo.setCheckStatus(row.ticket_key, status.overall);
+            await ticketsRepo.setCheckStatus(row.ticket_key, status.overall);
             body.checkStatus = status.overall;
           }
         }
@@ -180,7 +184,7 @@ function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller,
   });
 
   router.get('/tickets/:key/pulls', async (req, res, next) => {
-    if (!ticketsRepo.get(req.params.key)) {
+    if (!(await ticketsRepo.get(req.params.key))) {
       return res.status(404).json({ error: 'not_found', message: `no ticket ${req.params.key}` });
     }
     try {
@@ -197,7 +201,7 @@ function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller,
   });
 
   router.get('/tickets/:key/transitions', async (req, res, next) => {
-    if (!ticketsRepo.get(req.params.key)) {
+    if (!(await ticketsRepo.get(req.params.key))) {
       return res.status(404).json({ error: 'not_found', message: `no ticket ${req.params.key}` });
     }
     try {
@@ -211,7 +215,7 @@ function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller,
   router.post('/tickets/:key/transition', requireApiToken, async (req, res, next) => {
     const { key } = req.params;
     const { name } = req.body || {};
-    if (!ticketsRepo.get(key)) return res.status(404).json({ error: 'not_found', message: `no ticket ${key}` });
+    if (!(await ticketsRepo.get(key))) return res.status(404).json({ error: 'not_found', message: `no ticket ${key}` });
     if (!name) return res.status(400).json({ error: 'bad_request', message: '"name" (target status) is required' });
     try {
       const result = await jira.transition(key, name);
@@ -221,8 +225,8 @@ function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller,
       // Reflects the transition's effect (e.g. a PR opening) right away
       // instead of waiting up to POLL_INTERVAL_MS for the next tick.
       await poller.pollNow();
-      const row = ticketsRepo.get(key);
-      const repoConfig = row?.repo_owner ? reposRepo.get(row.repo_owner, row.repo_name) : null;
+      const row = await ticketsRepo.get(key);
+      const repoConfig = row?.repo_owner ? await reposRepo.get(row.repo_owner, row.repo_name) : null;
       const statusMap = repoConfig?.effectiveStatusHandlerMap || repoConfig?.statusHandlerMap;
       if (repoConfig && stageForJiraStatus(name, statusMap) === 'in_qa') {
         await assignTicketToRole({
@@ -238,7 +242,7 @@ function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller,
           repoName: row.repo_name,
         });
       }
-      return res.json(rowToApi(ticketsRepo.get(key), reposRepo));
+      return res.json(await rowToApi(await ticketsRepo.get(key), reposRepo));
     } catch (err) {
       return next(err);
     }
@@ -247,7 +251,7 @@ function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller,
   router.post('/tickets/:key/comment', requireApiToken, async (req, res, next) => {
     const { key } = req.params;
     const { text } = req.body || {};
-    if (!ticketsRepo.get(key)) return res.status(404).json({ error: 'not_found', message: `no ticket ${key}` });
+    if (!(await ticketsRepo.get(key))) return res.status(404).json({ error: 'not_found', message: `no ticket ${key}` });
     if (!text || !text.trim()) return res.status(400).json({ error: 'bad_request', message: '"text" is required' });
     try {
       await jira.addComment(key, text);
@@ -259,7 +263,7 @@ function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller,
 
   router.post('/tickets/:key/assignee', requireApiToken, async (req, res, next) => {
     const { key } = req.params;
-    const row = ticketsRepo.get(key);
+    const row = await ticketsRepo.get(key);
     if (!row) return res.status(404).json({ error: 'not_found', message: `no ticket ${key}` });
     const person = normalizePerson(req.body || {});
     if (!person) {
@@ -270,9 +274,9 @@ function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller,
         return res.status(503).json({ error: 'unavailable', message: 'Jira client is not configured' });
       }
       await jira.assign(key, person.accountId);
-      ticketsRepo.setAssignee(key, { name: person.displayName, avatarUrl: person.avatarUrl });
-      const updated = ticketsRepo.get(key);
-      return res.json(rowToApi(updated, reposRepo));
+      await ticketsRepo.setAssignee(key, { name: person.displayName, avatarUrl: person.avatarUrl });
+      const updated = await ticketsRepo.get(key);
+      return res.json(await rowToApi(updated, reposRepo));
     } catch (err) {
       return next(err);
     }
@@ -281,7 +285,7 @@ function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller,
   router.post('/tickets/:key/branch', requireApiToken, async (req, res, next) => {
     const { key } = req.params;
     const { name, from } = req.body || {};
-    if (!ticketsRepo.get(key)) return res.status(404).json({ error: 'not_found', message: `no ticket ${key}` });
+    if (!(await ticketsRepo.get(key))) return res.status(404).json({ error: 'not_found', message: `no ticket ${key}` });
     const correlationId = newCorrelationId();
     try {
       const result = await createBranchFromProduction({
@@ -296,8 +300,8 @@ function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller,
         log: logger.child({ correlationId, ticketKey: key }),
         correlationId,
       });
-      const updated = ticketsRepo.get(key);
-      return res.status(result.created ? 201 : 200).json(rowToApi(updated, reposRepo));
+      const updated = await ticketsRepo.get(key);
+      return res.status(result.created ? 201 : 200).json(await rowToApi(updated, reposRepo));
     } catch (err) {
       if (err instanceof BranchNotReadyError || err.status === 400) {
         return res.status(400).json({ error: 'bad_request', message: err.message });
@@ -312,7 +316,7 @@ function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller,
   router.post('/tickets/:key/pr', requireApiToken, async (req, res, next) => {
     const { key } = req.params;
     const { target } = req.body || {};
-    if (!ticketsRepo.get(key)) return res.status(404).json({ error: 'not_found', message: `no ticket ${key}` });
+    if (!(await ticketsRepo.get(key))) return res.status(404).json({ error: 'not_found', message: `no ticket ${key}` });
     const correlationId = newCorrelationId();
     try {
       await openTicketPr({
@@ -327,8 +331,8 @@ function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller,
         log: logger.child({ correlationId, ticketKey: key }),
         correlationId,
       });
-      const updated = ticketsRepo.get(key);
-      return res.status(201).json(rowToApi(updated, reposRepo));
+      const updated = await ticketsRepo.get(key);
+      return res.status(201).json(await rowToApi(updated, reposRepo));
     } catch (err) {
       if (err instanceof PrNotReadyError || err.status === 400) {
         return res.status(400).json({ error: 'bad_request', message: err.message });
@@ -343,7 +347,7 @@ function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller,
   router.post('/tickets/:key/pr/link', requireApiToken, async (req, res, next) => {
     const { key } = req.params;
     const { prNumber, owner, name } = req.body || {};
-    if (!ticketsRepo.get(key)) return res.status(404).json({ error: 'not_found', message: `no ticket ${key}` });
+    if (!(await ticketsRepo.get(key))) return res.status(404).json({ error: 'not_found', message: `no ticket ${key}` });
     const correlationId = newCorrelationId();
     try {
       await linkTicketPr({
@@ -359,8 +363,8 @@ function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller,
         log: logger.child({ correlationId, ticketKey: key }),
         correlationId,
       });
-      const updated = ticketsRepo.get(key);
-      return res.json(rowToApi(updated, reposRepo));
+      const updated = await ticketsRepo.get(key);
+      return res.json(await rowToApi(updated, reposRepo));
     } catch (err) {
       if (err instanceof LinkNotReadyError || err.status === 400) {
         return res.status(400).json({ error: 'bad_request', message: err.message });
@@ -374,12 +378,12 @@ function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller,
 
   router.post('/tickets/:key/pr/close', requireApiToken, async (req, res, next) => {
     const { key } = req.params;
-    const row = ticketsRepo.get(key);
+    const row = await ticketsRepo.get(key);
     if (!row) return res.status(404).json({ error: 'not_found', message: `no ticket ${key}` });
     if (!row.repo_owner) {
       return res.status(400).json({ error: 'bad_request', message: 'ticket has no resolved repo yet' });
     }
-    const repoConfig = reposRepo.get(row.repo_owner, row.repo_name);
+    const repoConfig = await reposRepo.get(row.repo_owner, row.repo_name);
     if (!repoConfig) {
       return res.status(400).json({ error: 'bad_request', message: `${row.repo_owner}/${row.repo_name} is not a watched repo` });
     }
@@ -399,8 +403,8 @@ function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller,
         log: logger.child({ correlationId, ticketKey: key }),
         correlationId,
       });
-      const updated = ticketsRepo.get(key);
-      return res.json(rowToApi(updated, reposRepo));
+      const updated = await ticketsRepo.get(key);
+      return res.json(await rowToApi(updated, reposRepo));
     } catch (err) {
       if (err instanceof CloseNotReadyError || err.status === 400) {
         return res.status(400).json({ error: 'bad_request', message: err.message });
@@ -417,12 +421,12 @@ function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller,
 
   router.post('/tickets/:key/merge', requireApiToken, async (req, res, next) => {
     const { key } = req.params;
-    const row = ticketsRepo.get(key);
+    const row = await ticketsRepo.get(key);
     if (!row) return res.status(404).json({ error: 'not_found', message: `no ticket ${key}` });
     if (!row.repo_owner) {
       return res.status(400).json({ error: 'bad_request', message: 'ticket has no resolved repo yet' });
     }
-    const repoConfig = reposRepo.get(row.repo_owner, row.repo_name);
+    const repoConfig = await reposRepo.get(row.repo_owner, row.repo_name);
     if (!repoConfig) {
       return res.status(400).json({ error: 'bad_request', message: `${row.repo_owner}/${row.repo_name} is not a watched repo` });
     }
@@ -443,18 +447,18 @@ function createTicketsRouter({ ticketsRepo, eventsRepo, reposRepo, jira, poller,
         log: logger.child({ correlationId, ticketKey: key }),
         correlationId,
       });
-      const updated = ticketsRepo.get(key);
-      return res.json(rowToApi(updated, reposRepo));
+      const updated = await ticketsRepo.get(key);
+      return res.json(await rowToApi(updated, reposRepo));
     } catch (err) {
       if (err instanceof MergeNotReadyError || err.status === 400) {
         return res.status(400).json({ error: 'bad_request', message: err.message });
       }
       if (err.status === 409) {
-        const updated = ticketsRepo.get(key);
+        const updated = await ticketsRepo.get(key);
         return res.status(409).json({
           error: 'conflict',
           message: err.message,
-          ticket: rowToApi(updated, reposRepo),
+          ticket: await rowToApi(updated, reposRepo),
         });
       }
       return next(err);

@@ -11,11 +11,11 @@ function createStagingRouter({ reposRepo, repoResolver, jira, ticketsRepo, event
     if (!owner || !name) {
       return res.status(400).json({ error: 'bad_request', message: '"owner" and "name" are required' });
     }
-    if (!reposRepo.isActive(owner, name)) {
+    if (!(await reposRepo.isActive(owner, name))) {
       return res.status(400).json({ error: 'unknown_repo', message: `${owner}/${name} is not a watched repo` });
     }
 
-    const repoConfig = reposRepo.get(owner, name);
+    const repoConfig = await reposRepo.get(owner, name);
     const correlationId = newCorrelationId();
     const log = logger.child({ correlationId });
     try {

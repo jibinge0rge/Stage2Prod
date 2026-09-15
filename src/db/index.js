@@ -1,46 +1,54 @@
 const fs = require('fs');
 const path = require('path');
-const Database = require('better-sqlite3');
+const { Pool } = require('pg');
 
-function createDb(dbPath) {
-  if (dbPath !== ':memory:') {
-    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-  }
-  const db = new Database(dbPath);
-  // Per-connection PRAGMAs — not schema state, so these run on every open
-  // rather than living in a one-time migration file (and journal_mode
-  // can't be changed from inside a transaction, which migrations run in).
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
-  runMigrations(db);
-  return db;
+/**
+ * `connectionConfig` is either a Postgres connection string (production) or
+ * a pre-built pg-compatible Pool (tests, via pg-mem) passed as
+ * `{ pool: <Pool-like> }` so the migration/bookkeeping logic below is
+ * exercised identically in both cases.
+ */
+async function createDb(connectionConfig) {
+  const pool = connectionConfig && connectionConfig.pool
+    ? connectionConfig.pool
+    : new Pool({ connectionString: connectionConfig });
+  await runMigrations(pool);
+  return pool;
 }
 
-function runMigrations(db) {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS schema_migrations (
-      filename   TEXT PRIMARY KEY,
-      applied_at TEXT NOT NULL
-    );
-  `);
-  const applied = new Set(db.prepare('SELECT filename FROM schema_migrations').all().map((r) => r.filename));
+async function runMigrations(pool) {
+  const client = await pool.connect();
+  try {
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS schema_migrations (
+        filename   TEXT PRIMARY KEY,
+        applied_at TEXT NOT NULL
+      );
+    `);
+    const { rows } = await client.query('SELECT filename FROM schema_migrations');
+    const applied = new Set(rows.map((r) => r.filename));
 
-  const migrationsDir = path.join(__dirname, 'migrations');
-  const files = fs.readdirSync(migrationsDir).filter((f) => f.endsWith('.sql')).sort();
-  const markApplied = db.prepare('INSERT INTO schema_migrations (filename, applied_at) VALUES (?, ?)');
+    const migrationsDir = path.join(__dirname, 'migrations');
+    const files = fs.readdirSync(migrationsDir).filter((f) => f.endsWith('.sql')).sort();
 
-  for (const file of files) {
-    if (applied.has(file)) continue;
-    const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
-    db.exec('BEGIN');
-    try {
-      db.exec(sql);
-      markApplied.run(file, new Date().toISOString());
-      db.exec('COMMIT');
-    } catch (err) {
-      db.exec('ROLLBACK');
-      throw new Error(`migration ${file} failed: ${err.message}`);
+    for (const file of files) {
+      if (applied.has(file)) continue;
+      const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
+      try {
+        await client.query('BEGIN');
+        await client.query(sql);
+        await client.query('INSERT INTO schema_migrations (filename, applied_at) VALUES ($1, $2)', [
+          file,
+          new Date().toISOString(),
+        ]);
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw new Error(`migration ${file} failed: ${err.message}`);
+      }
     }
+  } finally {
+    client.release();
   }
 }
 

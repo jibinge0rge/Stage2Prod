@@ -20,8 +20,8 @@ function createCutsRouter({
 }) {
   const router = express.Router();
 
-  function requireWatched(owner, name, res) {
-    if (!reposRepo.isActive(owner, name)) {
+  async function requireWatched(owner, name, res) {
+    if (!(await reposRepo.isActive(owner, name))) {
       res.status(404).json({ error: 'not_found', message: `${owner}/${name} is not a watched repo` });
       return false;
     }
@@ -30,10 +30,10 @@ function createCutsRouter({
 
   router.get('/repos/:owner/:name/cuts', async (req, res, next) => {
     const { owner, name } = req.params;
-    if (!requireWatched(owner, name, res)) return;
+    if (!(await requireWatched(owner, name, res))) return;
     if (!cutsRepo) return res.json({ cuts: [] });
     try {
-      const repo = reposRepo.get(owner, name);
+      const repo = await reposRepo.get(owner, name);
       const github = repoResolver?.getClient?.(owner, name);
       const cuts = await syncReleaseCutsFromGithub({
         github,
@@ -51,7 +51,7 @@ function createCutsRouter({
 
   router.get('/repos/:owner/:name/cuts/preview', async (req, res, next) => {
     const { owner, name } = req.params;
-    if (!requireWatched(owner, name, res)) return;
+    if (!(await requireWatched(owner, name, res))) return;
     try {
       const preview = await changelogFromStaging({
         owner,
@@ -75,10 +75,10 @@ function createCutsRouter({
 
   router.get('/repos/:owner/:name/cuts/:id', async (req, res, next) => {
     const { owner, name, id } = req.params;
-    if (!requireWatched(owner, name, res)) return;
+    if (!(await requireWatched(owner, name, res))) return;
     if (!cutsRepo) return res.status(404).json({ error: 'not_found', message: 'no such cut' });
     try {
-      const repo = reposRepo.get(owner, name);
+      const repo = await reposRepo.get(owner, name);
       const github = repoResolver?.getClient?.(owner, name);
       await syncReleaseCutsFromGithub({
         github,
@@ -88,11 +88,11 @@ function createCutsRouter({
         name,
         stagingBranch: repo?.stagingBranch,
       });
-      const cut = cutsRepo.get(Number(id));
+      const cut = await cutsRepo.get(Number(id));
       if (!cut || cut.repoOwner !== owner || cut.repoName !== name) {
         return res.status(404).json({ error: 'not_found', message: `no cut ${id} on ${owner}/${name}` });
       }
-      return res.json({ cut: hydrateCut(cut, ticketsRepo) });
+      return res.json({ cut: await hydrateCut(cut, ticketsRepo) });
     } catch (err) {
       return next(err);
     }
@@ -100,7 +100,7 @@ function createCutsRouter({
 
   router.post('/repos/:owner/:name/cuts', requireApiToken, async (req, res, next) => {
     const { owner, name } = req.params;
-    if (!requireWatched(owner, name, res)) return;
+    if (!(await requireWatched(owner, name, res))) return;
     const correlationId = newCorrelationId();
     try {
       const cut = await createProductionCut({

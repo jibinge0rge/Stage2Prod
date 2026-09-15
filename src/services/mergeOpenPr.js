@@ -73,7 +73,7 @@ async function approveIfNotAuthor({ github, pr, prNumber, log }) {
  * already merged) instead of defaulting every failure to "conflict."
  */
 async function mergeOpenPr({ ticketKey, repoOwner, repoName, productionBranch, stagingBranch, statusMap, github, jira, ticketsRepo, eventsRepo, lockManager, log, correlationId, trigger = 'POST /api/tickets/:key/merge' }) {
-  const row = ticketsRepo.get(ticketKey);
+  const row = await ticketsRepo.get(ticketKey);
   if (!row) {
     const err = new Error(`No ticket ${ticketKey}`);
     err.status = 404;
@@ -89,9 +89,9 @@ async function mergeOpenPr({ ticketKey, repoOwner, repoName, productionBranch, s
   // mergeable, so it's worth leaving the ticket flagged and offering a
   // retry. Distinct from "gone" below, which clears back to unmerged
   // instead, since there's nothing left to retry.
-  function recordConflict(target, detail, jiraComment) {
-    ticketsRepo.setPipelineState(ticketKey, PIPELINE_STATES.CONFLICT);
-    eventsRepo.insertEvent({
+  async function recordConflict(target, detail, jiraComment) {
+    await ticketsRepo.setPipelineState(ticketKey, PIPELINE_STATES.CONFLICT);
+    await eventsRepo.insertEvent({
       ticketKey,
       trigger,
       action: target === 'develop' ? 'merge:develop' : 'merge:staging',
@@ -113,13 +113,13 @@ async function mergeOpenPr({ ticketKey, repoOwner, repoName, productionBranch, s
   // staging reset: the ticket just waits for its next real Jira
   // transition to open a fresh PR, same as it would if it had never
   // reached this state at all.
-  function recordGone(target, detail, jiraComment) {
-    ticketsRepo.setPipelineState(ticketKey, PIPELINE_STATES.UNMERGED);
+  async function recordGone(target, detail, jiraComment) {
+    await ticketsRepo.setPipelineState(ticketKey, PIPELINE_STATES.UNMERGED);
     // Otherwise the drawer keeps showing "Pull request #N" and a frozen
     // check-status for a PR that no longer exists, which is exactly the
     // stale, misleading state this whole path exists to avoid.
-    ticketsRepo.clearGithubFacts(ticketKey);
-    eventsRepo.insertEvent({
+    await ticketsRepo.clearGithubFacts(ticketKey);
+    await eventsRepo.insertEvent({
       ticketKey,
       trigger,
       action: target === 'develop' ? 'merge:develop' : 'merge:staging',
@@ -164,8 +164,8 @@ async function mergeOpenPr({ ticketKey, repoOwner, repoName, productionBranch, s
     // Already merged outside Stage2Prod (e.g. someone merged it by hand
     // on GitHub) — reconcile local state instead of erroring, since
     // there's nothing left to do.
-    ticketsRepo.setPipelineState(ticketKey, target === 'develop' ? PIPELINE_STATES.DEVELOP : PIPELINE_STATES.STAGING);
-    eventsRepo.insertEvent({
+    await ticketsRepo.setPipelineState(ticketKey, target === 'develop' ? PIPELINE_STATES.DEVELOP : PIPELINE_STATES.STAGING);
+    await eventsRepo.insertEvent({
       ticketKey,
       trigger,
       action: target === 'develop' ? 'merge:develop' : 'merge:staging',
@@ -216,11 +216,11 @@ async function mergeOpenPr({ ticketKey, repoOwner, repoName, productionBranch, s
 
       if (target === 'develop') {
         await github.deleteRef(pr.head);
-        ticketsRepo.setPipelineState(ticketKey, PIPELINE_STATES.DEVELOP);
-        ticketsRepo.setGithubFacts(ticketKey, { prState: 'merged', headSha: merged.sha });
+        await ticketsRepo.setPipelineState(ticketKey, PIPELINE_STATES.DEVELOP);
+        await ticketsRepo.setGithubFacts(ticketKey, { prState: 'merged', headSha: merged.sha });
         await jira.addComment(ticketKey, JIRA_COMMENTS.DEVELOP_SUCCESS);
         await syncJiraStatus({ jira, ticketsRepo, ticketKey, status: jiraStatusForStage('done', statusMap), log });
-        eventsRepo.insertEvent({
+        await eventsRepo.insertEvent({
           ticketKey,
           trigger,
           action: 'merge:develop',
@@ -234,11 +234,11 @@ async function mergeOpenPr({ ticketKey, repoOwner, repoName, productionBranch, s
         });
         log.info({ ticketKey, prNumber }, 'merged into develop');
       } else {
-        ticketsRepo.setPipelineState(ticketKey, PIPELINE_STATES.STAGING);
-        ticketsRepo.setGithubFacts(ticketKey, { prState: 'merged', headSha: merged.sha });
+        await ticketsRepo.setPipelineState(ticketKey, PIPELINE_STATES.STAGING);
+        await ticketsRepo.setGithubFacts(ticketKey, { prState: 'merged', headSha: merged.sha });
         await jira.addComment(ticketKey, JIRA_COMMENTS.STAGING_SUCCESS);
         await syncJiraStatus({ jira, ticketsRepo, ticketKey, status: jiraStatusForStage('in_qa', statusMap), log });
-        eventsRepo.insertEvent({
+        await eventsRepo.insertEvent({
           ticketKey,
           trigger,
           action: 'merge:staging',

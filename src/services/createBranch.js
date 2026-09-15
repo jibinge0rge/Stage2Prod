@@ -16,19 +16,19 @@ class BranchNotReadyError extends Error {
  * project-key match, else the only watched repo. Never guesses between
  * two equally-plausible repos.
  */
-function resolveRepo({ ticketKey, ticketsRepo, reposRepo, repoResolver }) {
-  const row = ticketsRepo.get(ticketKey);
-  if (row.repo_owner && reposRepo.isActive(row.repo_owner, row.repo_name)) {
+async function resolveRepo({ ticketKey, ticketsRepo, reposRepo, repoResolver }) {
+  const row = await ticketsRepo.get(ticketKey);
+  if (row.repo_owner && (await reposRepo.isActive(row.repo_owner, row.repo_name))) {
     return { owner: row.repo_owner, name: row.repo_name };
   }
-  const byProject = repoResolver.matchByProjectKeyOnly(ticketKey);
+  const byProject = await repoResolver.matchByProjectKeyOnly(ticketKey);
   if (byProject) {
-    ticketsRepo.setRepo(ticketKey, byProject.owner, byProject.name);
+    await ticketsRepo.setRepo(ticketKey, byProject.owner, byProject.name);
     return byProject;
   }
-  const active = reposRepo.list({ activeOnly: true });
+  const active = await reposRepo.list({ activeOnly: true });
   if (active.length === 1) {
-    ticketsRepo.setRepo(ticketKey, active[0].owner, active[0].name);
+    await ticketsRepo.setRepo(ticketKey, active[0].owner, active[0].name);
     return { owner: active[0].owner, name: active[0].name };
   }
   return null;
@@ -61,7 +61,7 @@ async function createBranchFromProduction({
   correlationId,
   trigger = 'POST /api/tickets/:key/branch',
 }) {
-  const row = ticketsRepo.get(ticketKey);
+  const row = await ticketsRepo.get(ticketKey);
   if (!row) {
     const err = new Error(`No ticket ${ticketKey}`);
     err.status = 404;
@@ -73,14 +73,14 @@ async function createBranchFromProduction({
     throw new BranchNotReadyError('"from" must be "production" or "staging"');
   }
 
-  const repo = resolveRepo({ ticketKey, ticketsRepo, reposRepo, repoResolver });
+  const repo = await resolveRepo({ ticketKey, ticketsRepo, reposRepo, repoResolver });
   if (!repo) {
     throw new BranchNotReadyError(
       'Ticket has no resolved repo. Set a Jira project key on the matching watched repo, or watch exactly one repo.'
     );
   }
 
-  const repoConfig = reposRepo.get(repo.owner, repo.name);
+  const repoConfig = await reposRepo.get(repo.owner, repo.name);
   if (!repoConfig) {
     throw new BranchNotReadyError(`${repo.owner}/${repo.name} is not a watched repo`);
   }
@@ -125,7 +125,7 @@ async function createBranchFromProduction({
     }
   }
 
-  ticketsRepo.setGithubFacts(ticketKey, { branchName: name, headSha: sha });
+  await ticketsRepo.setGithubFacts(ticketKey, { branchName: name, headSha: sha });
 
   if (created) {
     try {
@@ -143,7 +143,7 @@ async function createBranchFromProduction({
   }
 
   const sourceLabel = source === 'staging' ? 'staging' : 'production';
-  eventsRepo.insertEvent({
+  await eventsRepo.insertEvent({
     ticketKey,
     trigger,
     action: 'create-branch',

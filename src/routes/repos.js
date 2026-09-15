@@ -45,8 +45,12 @@ function createReposRouter({ config, reposRepo, ticketsRepo, eventsRepo, repoRes
   const router = express.Router();
   const log = logger || console;
 
-  router.get('/repos', (req, res) => {
-    res.json({ repos: reposRepo.list({ activeOnly: true }) });
+  router.get('/repos', async (req, res, next) => {
+    try {
+      res.json({ repos: await reposRepo.list({ activeOnly: true }) });
+    } catch (err) {
+      next(err);
+    }
   });
 
   router.get('/status-map', (req, res) => {
@@ -103,7 +107,7 @@ function createReposRouter({ config, reposRepo, ticketsRepo, eventsRepo, repoRes
       } catch (err) {
         return res.status(err.status || 400).json({ error: 'bad_request', message: err.message });
       }
-      const repo = reposRepo.add(owner, name, {
+      const repo = await reposRepo.add(owner, name, {
         productionBranch,
         stagingBranch,
         jiraProjectKey,
@@ -118,11 +122,11 @@ function createReposRouter({ config, reposRepo, ticketsRepo, eventsRepo, repoRes
 
   router.patch('/repos/:owner/:name', requireApiToken, async (req, res, next) => {
     const { owner, name } = req.params;
-    if (!reposRepo.isActive(owner, name)) {
+    if (!(await reposRepo.isActive(owner, name))) {
       return res.status(404).json({ error: 'not_found', message: `${owner}/${name} is not a watched repo` });
     }
     const { productionBranch, stagingBranch, jiraProjectKey, statusHandlerMap, teamRoles } = req.body || {};
-    const current = reposRepo.get(owner, name);
+    const current = await reposRepo.get(owner, name);
     const nextProduction = productionBranch || current.productionBranch;
     const nextStaging = stagingBranch || current.stagingBranch;
     if (productionBranch && nextProduction === nextStaging) {
@@ -141,7 +145,7 @@ function createReposRouter({ config, reposRepo, ticketsRepo, eventsRepo, repoRes
     const branchesChanged =
       nextProduction !== current.productionBranch || nextStaging !== current.stagingBranch;
 
-    const repo = reposRepo.update(owner, name, {
+    const repo = await reposRepo.update(owner, name, {
       productionBranch,
       stagingBranch,
       jiraProjectKey,
@@ -169,9 +173,13 @@ function createReposRouter({ config, reposRepo, ticketsRepo, eventsRepo, repoRes
     return res.json({ repo, reclassified });
   });
 
-  router.delete('/repos/:owner/:name', requireApiToken, (req, res) => {
-    reposRepo.remove(req.params.owner, req.params.name);
-    res.status(204).end();
+  router.delete('/repos/:owner/:name', requireApiToken, async (req, res, next) => {
+    try {
+      await reposRepo.remove(req.params.owner, req.params.name);
+      res.status(204).end();
+    } catch (err) {
+      next(err);
+    }
   });
 
   return router;

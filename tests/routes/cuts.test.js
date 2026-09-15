@@ -9,10 +9,10 @@ function notFound() {
   return err;
 }
 
-function buildTestCtx(github) {
-  const { ticketsRepo, eventsRepo, cursorRepo, lockManager, reposRepo, cutsRepo } = createTestDb();
-  reposRepo.add('acme', 'widgets', { productionBranch: 'main', stagingBranch: 'qa' });
-  seedTicket(ticketsRepo, {
+async function buildTestCtx(github) {
+  const { ticketsRepo, eventsRepo, cursorRepo, lockManager, reposRepo, cutsRepo } = await createTestDb();
+  await reposRepo.add('acme', 'widgets', { productionBranch: 'main', stagingBranch: 'qa' });
+  await seedTicket(ticketsRepo, {
     key: 'PROJ-1',
     summary: 'Login',
     jiraStatus: 'In QA',
@@ -50,8 +50,8 @@ function buildTestCtx(github) {
 
 describe('GET /api/repos/:owner/:name/cuts', () => {
   it('lists cuts newest first', async () => {
-    const ctx = buildTestCtx();
-    ctx.cutsRepo.insert({
+    const ctx = await buildTestCtx();
+    await ctx.cutsRepo.insert({
       repoOwner: 'acme',
       repoName: 'widgets',
       branchName: 'release-4.2.0',
@@ -60,7 +60,7 @@ describe('GET /api/repos/:owner/:name/cuts', () => {
       createdAt: '2026-09-01T00:00:00.000Z',
       tickets: [{ key: 'PROJ-1', summary: 'Login' }],
     });
-    ctx.cutsRepo.insert({
+    await ctx.cutsRepo.insert({
       repoOwner: 'acme',
       repoName: 'widgets',
       branchName: 'release-4.3.0-v1',
@@ -78,7 +78,7 @@ describe('GET /api/repos/:owner/:name/cuts', () => {
   });
 
   it('404s for an unknown repo', async () => {
-    const app = createApp(buildTestCtx());
+    const app = createApp(await buildTestCtx());
     const res = await request(app).get('/api/repos/nope/nope/cuts');
     expect(res.status).toBe(404);
   });
@@ -86,8 +86,8 @@ describe('GET /api/repos/:owner/:name/cuts', () => {
 
 describe('GET /api/repos/:owner/:name/cuts/:id', () => {
   it('returns tickets that went from staging in that cut', async () => {
-    const ctx = buildTestCtx();
-    const cut = ctx.cutsRepo.insert({
+    const ctx = await buildTestCtx();
+    const cut = await ctx.cutsRepo.insert({
       repoOwner: 'acme',
       repoName: 'widgets',
       branchName: 'release-4.3.0-v1',
@@ -106,13 +106,13 @@ describe('GET /api/repos/:owner/:name/cuts/:id', () => {
 
 describe('POST /api/repos/:owner/:name/cuts', () => {
   it('401s without a bearer token', async () => {
-    const app = createApp(buildTestCtx());
+    const app = createApp(await buildTestCtx());
     const res = await request(app).post('/api/repos/acme/widgets/cuts').send({ name: 'prod-x' });
     expect(res.status).toBe(401);
   });
 
   it('creates a cut from staging and returns its tickets', async () => {
-    const ctx = buildTestCtx();
+    const ctx = await buildTestCtx();
     const app = createApp(ctx);
     const res = await request(app)
       .post('/api/repos/acme/widgets/cuts')

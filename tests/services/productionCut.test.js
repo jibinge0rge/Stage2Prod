@@ -14,10 +14,10 @@ function notFound() {
   return err;
 }
 
-function baseDeps() {
-  const { ticketsRepo, eventsRepo, reposRepo, cutsRepo, lockManager } = createTestDb();
-  reposRepo.add('acme', 'widgets', { productionBranch: 'main', stagingBranch: 'qa' });
-  seedTicket(ticketsRepo, {
+async function baseDeps() {
+  const { ticketsRepo, eventsRepo, reposRepo, cutsRepo, lockManager } = await createTestDb();
+  await reposRepo.add('acme', 'widgets', { productionBranch: 'main', stagingBranch: 'qa' });
+  await seedTicket(ticketsRepo, {
     key: 'PROJ-1',
     summary: 'Login',
     jiraStatus: 'In QA',
@@ -59,9 +59,9 @@ function baseDeps() {
 }
 
 describe('ticketsFromCommits', () => {
-  it('picks up ticket keys from merge commit messages', () => {
-    const { ticketsRepo } = createTestDb();
-    seedTicket(ticketsRepo, {
+  it('picks up ticket keys from merge commit messages', async () => {
+    const { ticketsRepo } = await createTestDb();
+    await seedTicket(ticketsRepo, {
       key: 'PROJ-1',
       summary: 'Login',
       jiraStatus: 'In QA',
@@ -69,16 +69,16 @@ describe('ticketsFromCommits', () => {
       repoOwner: 'acme',
       repoName: 'widgets',
     });
-    const tickets = ticketsFromCommits(
+    const tickets = await ticketsFromCommits(
       [{ commit: { message: 'Merge pull request #12 from acme/feat/PROJ-1-login' } }],
       { ticketsRepo, owner: 'acme', name: 'widgets' }
     );
     expect(tickets).toEqual([expect.objectContaining({ key: 'PROJ-1', summary: 'Login' })]);
   });
 
-  it('ignores Jira-like keys that are not tracked tickets', () => {
-    const { ticketsRepo } = createTestDb();
-    seedTicket(ticketsRepo, {
+  it('ignores Jira-like keys that are not tracked tickets', async () => {
+    const { ticketsRepo } = await createTestDb();
+    await seedTicket(ticketsRepo, {
       key: 'PROJ-1',
       summary: 'Login',
       jiraStatus: 'In QA',
@@ -86,7 +86,7 @@ describe('ticketsFromCommits', () => {
       repoOwner: 'acme',
       repoName: 'widgets',
     });
-    const tickets = ticketsFromCommits(
+    const tickets = await ticketsFromCommits(
       [{ commit: { message: 'PR-084 and DE-024 and PROJ-1' } }],
       { ticketsRepo, owner: 'acme', name: 'widgets' }
     );
@@ -96,7 +96,7 @@ describe('ticketsFromCommits', () => {
 
 describe('changelogFromStaging', () => {
   it('falls back to tickets on staging when there is no previous release cut', async () => {
-    const deps = baseDeps();
+    const deps = await baseDeps();
     const preview = await changelogFromStaging(deps);
     expect(preview.previousFrom).toBeNull();
     expect(preview.tickets.map((t) => t.key)).toEqual(['PROJ-1']);
@@ -104,8 +104,8 @@ describe('changelogFromStaging', () => {
   });
 
   it('compares staging to the latest release cut when one exists', async () => {
-    const deps = baseDeps();
-    deps.cutsRepo.insert({
+    const deps = await baseDeps();
+    await deps.cutsRepo.insert({
       repoOwner: 'acme',
       repoName: 'widgets',
       branchName: 'release-4.3.0-v1',
@@ -117,8 +117,8 @@ describe('changelogFromStaging', () => {
   });
 
   it('ignores a stored cut whose name does not start with release', async () => {
-    const deps = baseDeps();
-    deps.cutsRepo.insert({
+    const deps = await baseDeps();
+    await deps.cutsRepo.insert({
       repoOwner: 'acme',
       repoName: 'widgets',
       branchName: 'prod-old',
@@ -132,15 +132,15 @@ describe('changelogFromStaging', () => {
 
 describe('createProductionCut', () => {
   it('creates a branch from staging and records tickets', async () => {
-    const deps = baseDeps();
+    const deps = await baseDeps();
     const cut = await createProductionCut({ ...deps, branchName: 'release-4.3.0-v1' });
 
     expect(cut).toMatchObject({ branchName: 'release-4.3.0-v1', sha: 'stagingsha' });
     expect(cut.tickets.map((t) => t.key)).toEqual(['PROJ-1']);
     expect(deps.github.createRef).toHaveBeenCalledWith('release-4.3.0-v1', 'stagingsha');
-    expect(deps.cutsRepo.list('acme', 'widgets')).toHaveLength(1);
+    expect(await deps.cutsRepo.list('acme', 'widgets')).toHaveLength(1);
 
-    const { events } = deps.eventsRepo.list({ repo: 'acme/widgets' });
+    const { events } = await deps.eventsRepo.list({ repo: 'acme/widgets' });
     expect(events[0]).toMatchObject({
       action: 'create-cut',
       outcome: OUTCOMES.NOTED,
@@ -149,19 +149,19 @@ describe('createProductionCut', () => {
   });
 
   it('defaults to a dated release-* name', async () => {
-    const deps = baseDeps();
+    const deps = await baseDeps();
     const cut = await createProductionCut(deps);
     expect(cut.branchName).toBe(defaultCutBranchName());
   });
 
   it('rejects a name that collides with staging', async () => {
-    const deps = baseDeps();
+    const deps = await baseDeps();
     await expect(createProductionCut({ ...deps, branchName: 'qa' })).rejects.toBeInstanceOf(CutNotReadyError);
     expect(deps.github.createRef).not.toHaveBeenCalled();
   });
 
   it('rejects a name that does not start with release', async () => {
-    const deps = baseDeps();
+    const deps = await baseDeps();
     await expect(createProductionCut({ ...deps, branchName: 'akash-update-release4.4' })).rejects.toBeInstanceOf(
       CutNotReadyError
     );
@@ -169,7 +169,7 @@ describe('createProductionCut', () => {
   });
 
   it('rejects when staging is missing', async () => {
-    const deps = baseDeps();
+    const deps = await baseDeps();
     deps.github.getRef = vi.fn().mockRejectedValue(notFound());
     await expect(createProductionCut({ ...deps, branchName: 'release-x' })).rejects.toBeInstanceOf(CutNotReadyError);
   });
@@ -178,7 +178,7 @@ describe('createProductionCut', () => {
 describe('syncReleaseCutsFromGithub', () => {
   it('records GitHub branches whose names start with release, newest first', async () => {
     const { syncReleaseCutsFromGithub } = require('../../src/services/productionCut');
-    const deps = baseDeps();
+    const deps = await baseDeps();
     deps.github.listBranches = vi.fn().mockResolvedValue([
       { name: 'develop', commit: { sha: 's' } },
       { name: 'release-4.2.0', commit: { sha: 'old' } },

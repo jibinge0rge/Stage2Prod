@@ -43,12 +43,12 @@ async function assignTicket({
     return result;
   }
 
-  ticketsRepo?.setAssignee?.(ticketKey, {
+  await ticketsRepo?.setAssignee?.(ticketKey, {
     name: person.displayName || person.accountId,
     avatarUrl: person.avatarUrl || null,
   });
 
-  eventsRepo?.insertEvent?.({
+  await eventsRepo?.insertEvent?.({
     ticketKey,
     trigger,
     action: 'jira:assign',
@@ -86,7 +86,7 @@ async function assignTicketToRole({
 
   if (!person) {
     const detail = `Multiple ${label} are configured and none is the default. Set a default ${label} on the repo.`;
-    eventsRepo?.insertEvent?.({
+    await eventsRepo?.insertEvent?.({
       ticketKey,
       trigger: trigger || 'assign',
       action: 'jira:assign',

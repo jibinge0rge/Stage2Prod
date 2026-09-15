@@ -8,10 +8,10 @@ function notFound() {
   return err;
 }
 
-function baseDeps({ pipelineState = 'unmerged', summary = 'Harden OAuth token refresh', withRepo = true } = {}) {
-  const { ticketsRepo, eventsRepo, reposRepo } = createTestDb();
-  reposRepo.add('acme', 'widgets', { productionBranch: 'main', stagingBranch: 'qa', jiraProjectKey: 'PROJ' });
-  seedTicket(ticketsRepo, {
+async function baseDeps({ pipelineState = 'unmerged', summary = 'Harden OAuth token refresh', withRepo = true } = {}) {
+  const { ticketsRepo, eventsRepo, reposRepo } = await createTestDb();
+  await reposRepo.add('acme', 'widgets', { productionBranch: 'main', stagingBranch: 'qa', jiraProjectKey: 'PROJ' });
+  await seedTicket(ticketsRepo, {
     key: 'PROJ-1',
     summary,
     jiraStatus: 'In Development',
@@ -47,17 +47,17 @@ function baseDeps({ pipelineState = 'unmerged', summary = 'Harden OAuth token re
 
 describe('createBranchFromProduction', () => {
   it('creates a branch from production and records it on the ticket', async () => {
-    const deps = baseDeps();
+    const deps = await baseDeps();
     const result = await createBranchFromProduction(deps);
 
     expect(result).toMatchObject({ created: true, branch: 'feat/PROJ-1-harden-oauth-token-refresh', from: 'main' });
     expect(deps.github.createRef).toHaveBeenCalledWith('feat/PROJ-1-harden-oauth-token-refresh', 'prodsha1');
     expect(deps.jira.addComment).toHaveBeenCalledWith('PROJ-1', expect.stringContaining('main'));
     expect(deps.jira.tryTransition).toHaveBeenCalledWith('PROJ-1', 'In Progress');
-    expect(deps.ticketsRepo.get('PROJ-1').jira_status).toBe('In Progress');
-    expect(deps.ticketsRepo.get('PROJ-1').branch_name).toBe('feat/PROJ-1-harden-oauth-token-refresh');
+    expect((await deps.ticketsRepo.get('PROJ-1')).jira_status).toBe('In Progress');
+    expect((await deps.ticketsRepo.get('PROJ-1')).branch_name).toBe('feat/PROJ-1-harden-oauth-token-refresh');
 
-    const { events } = deps.eventsRepo.list({ ticketKey: 'PROJ-1' });
+    const { events } = await deps.eventsRepo.list({ ticketKey: 'PROJ-1' });
     expect(events[0]).toMatchObject({
       action: 'create-branch',
       outcome: OUTCOMES.NOTED,
@@ -66,14 +66,14 @@ describe('createBranchFromProduction', () => {
   });
 
   it('uses an explicit name when given', async () => {
-    const deps = baseDeps();
+    const deps = await baseDeps();
     const result = await createBranchFromProduction({ ...deps, branchName: 'feat/PROJ-1-custom' });
     expect(result.branch).toBe('feat/PROJ-1-custom');
     expect(deps.github.createRef).toHaveBeenCalledWith('feat/PROJ-1-custom', 'prodsha1');
   });
 
   it('records an already-existing branch instead of overwriting it', async () => {
-    const deps = baseDeps();
+    const deps = await baseDeps();
     deps.github.getRef = vi.fn(async (branch) => {
       if (branch === 'main') return 'prodsha1';
       if (branch === 'feat/PROJ-1-custom') return 'existingsha';
@@ -86,20 +86,20 @@ describe('createBranchFromProduction', () => {
     expect(deps.github.createRef).not.toHaveBeenCalled();
     expect(deps.jira.addComment).not.toHaveBeenCalled();
     expect(deps.jira.tryTransition).not.toHaveBeenCalled();
-    expect(deps.ticketsRepo.get('PROJ-1').branch_name).toBe('feat/PROJ-1-custom');
-    expect(deps.ticketsRepo.get('PROJ-1').head_sha).toBe('existingsha');
+    expect((await deps.ticketsRepo.get('PROJ-1')).branch_name).toBe('feat/PROJ-1-custom');
+    expect((await deps.ticketsRepo.get('PROJ-1')).head_sha).toBe('existingsha');
   });
 
   it('throws BranchNotReadyError when production branch is missing', async () => {
-    const deps = baseDeps();
+    const deps = await baseDeps();
     deps.github.getRef = vi.fn().mockRejectedValue(notFound());
     await expect(createBranchFromProduction(deps)).rejects.toBeInstanceOf(BranchNotReadyError);
     expect(deps.github.createRef).not.toHaveBeenCalled();
   });
 
   it('throws when the name collides with production or staging', async () => {
-    const deps = baseDeps();
-    deps.reposRepo.update('acme', 'widgets', { productionBranch: 'PROJ-1-prod', stagingBranch: 'PROJ-1-qa' });
+    const deps = await baseDeps();
+    await deps.reposRepo.update('acme', 'widgets', { productionBranch: 'PROJ-1-prod', stagingBranch: 'PROJ-1-qa' });
     await expect(createBranchFromProduction({ ...deps, branchName: 'PROJ-1-prod' })).rejects.toBeInstanceOf(
       BranchNotReadyError
     );
@@ -110,18 +110,18 @@ describe('createBranchFromProduction', () => {
   });
 
   it('resolves via project key when the ticket has no repo yet', async () => {
-    const deps = baseDeps({ withRepo: false });
+    const deps = await baseDeps({ withRepo: false });
     deps.repoResolver.matchByProjectKeyOnly = vi.fn(() => ({ owner: 'acme', name: 'widgets' }));
 
     const result = await createBranchFromProduction(deps);
 
     expect(result.created).toBe(true);
-    expect(deps.ticketsRepo.get('PROJ-1').repo_owner).toBe('acme');
+    expect((await deps.ticketsRepo.get('PROJ-1')).repo_owner).toBe('acme');
     expect(deps.repoResolver.matchByProjectKeyOnly).toHaveBeenCalledWith('PROJ-1');
   });
 
   it('creates a branch from staging when from is staging', async () => {
-    const deps = baseDeps();
+    const deps = await baseDeps();
     deps.github.getRef = vi.fn(async (branch) => {
       if (branch === 'main') return 'prodsha1';
       if (branch === 'qa') return 'stagingsha';
@@ -135,7 +135,7 @@ describe('createBranchFromProduction', () => {
     expect(deps.github.createRef).toHaveBeenCalledWith('feat/PROJ-1-harden-oauth-token-refresh', 'stagingsha');
     expect(deps.jira.addComment).toHaveBeenCalledWith('PROJ-1', expect.stringContaining('qa'));
 
-    const { events } = deps.eventsRepo.list({ ticketKey: 'PROJ-1' });
+    const { events } = await deps.eventsRepo.list({ ticketKey: 'PROJ-1' });
     expect(events[0]).toMatchObject({
       action: 'create-branch',
       title: 'Created branch from staging',
@@ -143,14 +143,14 @@ describe('createBranchFromProduction', () => {
   });
 
   it('defaults to production when from is omitted', async () => {
-    const deps = baseDeps();
+    const deps = await baseDeps();
     const result = await createBranchFromProduction({ ...deps, from: undefined });
     expect(result.source).toBe('production');
     expect(deps.github.createRef).toHaveBeenCalledWith('feat/PROJ-1-harden-oauth-token-refresh', 'prodsha1');
   });
 
   it('throws BranchNotReadyError for an invalid from value', async () => {
-    const deps = baseDeps();
+    const deps = await baseDeps();
     await expect(createBranchFromProduction({ ...deps, from: 'develop' })).rejects.toBeInstanceOf(
       BranchNotReadyError
     );
@@ -158,7 +158,7 @@ describe('createBranchFromProduction', () => {
   });
 
   it('throws BranchNotReadyError when the staging branch is missing', async () => {
-    const deps = baseDeps();
+    const deps = await baseDeps();
     await expect(createBranchFromProduction({ ...deps, from: 'staging' })).rejects.toBeInstanceOf(
       BranchNotReadyError
     );
@@ -166,14 +166,14 @@ describe('createBranchFromProduction', () => {
   });
 
   it('throws when no repo can be resolved', async () => {
-    const deps = baseDeps();
-    deps.ticketsRepo.upsert({
+    const deps = await baseDeps();
+    await deps.ticketsRepo.upsert({
       key: 'OTHER-1',
       summary: 'Something',
       jiraStatus: 'In Development',
       pipelineState: 'unmerged',
     });
-    deps.reposRepo.add('acme', 'other', { jiraProjectKey: 'ELSE' });
+    await deps.reposRepo.add('acme', 'other', { jiraProjectKey: 'ELSE' });
 
     await expect(createBranchFromProduction({ ...deps, ticketKey: 'OTHER-1' })).rejects.toBeInstanceOf(
       BranchNotReadyError

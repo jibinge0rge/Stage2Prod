@@ -2,9 +2,9 @@ const { rejected } = require('../../src/handlers/rejected');
 const { createTestDb, seedTicket, noopLogger } = require('../setup');
 const { OUTCOMES, PIPELINE_STATES } = require('../../src/lib/constants');
 
-function baseDeps(overrides = {}) {
-  const { ticketsRepo, eventsRepo } = createTestDb();
-  seedTicket(ticketsRepo, { key: 'PROJ-1', jiraStatus: 'QA Failed' });
+async function baseDeps(overrides = {}) {
+  const { ticketsRepo, eventsRepo } = await createTestDb();
+  await seedTicket(ticketsRepo, { key: 'PROJ-1', jiraStatus: 'QA Failed' });
 
   const pr = { number: 55, head: { ref: 'feat/PROJ-1-thing' } };
   const github = { addLabel: vi.fn().mockResolvedValue({ added: true }) };
@@ -28,7 +28,7 @@ function baseDeps(overrides = {}) {
 
 describe('rejected handler', () => {
   it('never calls any ref-mutating GitHub method', async () => {
-    const deps = baseDeps();
+    const deps = await baseDeps();
     await rejected(deps);
     expect(deps.github.addLabel).toHaveBeenCalledWith(55, 'qa-rejected');
     expect(deps.github).not.toHaveProperty('createMerge');
@@ -38,20 +38,20 @@ describe('rejected handler', () => {
   });
 
   it('comments on Jira, labels the PR, and records NOTED with pipeline state rejected', async () => {
-    const deps = baseDeps();
+    const deps = await baseDeps();
     const result = await rejected(deps);
 
     expect(result.outcome).toBe(OUTCOMES.NOTED);
     expect(deps.jira.addComment).toHaveBeenCalledWith('PROJ-1', expect.stringContaining('rejected'));
-    expect(deps.ticketsRepo.get('PROJ-1').pipeline_state).toBe(PIPELINE_STATES.REJECTED);
+    expect((await deps.ticketsRepo.get('PROJ-1')).pipeline_state).toBe(PIPELINE_STATES.REJECTED);
 
-    const { events } = deps.eventsRepo.list({ ticketKey: 'PROJ-1' });
+    const { events } = await deps.eventsRepo.list({ ticketKey: 'PROJ-1' });
     expect(events[0].action).toBe('label');
     expect(events[0].repo).toEqual({ owner: 'acme', name: 'widgets' });
   });
 
   it('still comments and records the event when no matching PR is found', async () => {
-    const deps = baseDeps();
+    const deps = await baseDeps();
     deps.ticketMatcher.findOpenPrForTicket = vi.fn().mockResolvedValue(null);
 
     const result = await rejected(deps);

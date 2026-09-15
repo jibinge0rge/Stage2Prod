@@ -44,25 +44,25 @@ class RefLockManager {
     return this._mutexes.get(refName);
   }
 
-  _recordAcquire(refName, holder, correlationId) {
+  async _recordAcquire(refName, holder, correlationId) {
     const acquiredAt = new Date().toISOString();
     this._state.set(refName, { locked: true, holder, acquiredAt, correlationId });
     logger.info({ refName, holder, correlationId }, 'ref lock acquired');
     let lockEventId = null;
     if (this._lockEventsRepo) {
       const { repoOwner, repoName } = parseRefKey(refName);
-      lockEventId = this._lockEventsRepo.insertAcquire({ refName, holder, acquiredAt, correlationId, repoOwner, repoName });
+      lockEventId = await this._lockEventsRepo.insertAcquire({ refName, holder, acquiredAt, correlationId, repoOwner, repoName });
     }
     return { acquiredAt, lockEventId };
   }
 
-  _recordRelease(refName, holder, correlationId, acquiredAt, lockEventId) {
+  async _recordRelease(refName, holder, correlationId, acquiredAt, lockEventId) {
     const releasedAt = new Date().toISOString();
     const heldMs = Date.now() - new Date(acquiredAt).getTime();
     this._state.set(refName, { locked: false, holder: null, acquiredAt: null, correlationId: null });
     logger.info({ refName, holder, correlationId, heldMs }, 'ref lock released');
     if (this._lockEventsRepo && lockEventId != null) {
-      this._lockEventsRepo.recordRelease({ id: lockEventId, releasedAt, heldMs });
+      await this._lockEventsRepo.recordRelease({ id: lockEventId, releasedAt, heldMs });
     }
   }
 
@@ -72,11 +72,11 @@ class RefLockManager {
   async withLock(refName, holder, correlationId, fn) {
     const mutex = this._getMutex(refName);
     return mutex.runExclusive(async () => {
-      const { acquiredAt, lockEventId } = this._recordAcquire(refName, holder, correlationId);
+      const { acquiredAt, lockEventId } = await this._recordAcquire(refName, holder, correlationId);
       try {
         return await fn();
       } finally {
-        this._recordRelease(refName, holder, correlationId, acquiredAt, lockEventId);
+        await this._recordRelease(refName, holder, correlationId, acquiredAt, lockEventId);
       }
     });
   }

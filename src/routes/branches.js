@@ -33,18 +33,24 @@ async function branchesForRepo({ repo, ticketsRepo, reposRepo, cutsRepo, github,
 
   // Fix PR-base drift before grouping (e.g. open PR retargeted to staging
   // while the ticket is still stuck as "awaiting production").
-  const linked = ticketsRepo
-    .list()
+  const allTickets = await ticketsRepo.list();
+  const linked = allTickets
     .filter((t) => t.repo_owner === owner && t.repo_name === name && t.pr_number);
   await reconcileOpenPrBases(linked, { ticketsRepo, reposRepo, repoResolver, log });
   await reconcileMergeConflicts(linked, { ticketsRepo, reposRepo, repoResolver });
 
   const stagingSha = await github.getRef(stagingBranch).catch(() => null);
 
-  const stagingRows = ['staging_queued', 'staging', 'conflict', 'rejected'].flatMap((s) =>
-    ticketsRepo.listByPipelineStateAndRepo(s, owner, name)
+  const stagingRowLists = await Promise.all(
+    ['staging_queued', 'staging', 'conflict', 'rejected'].map((s) =>
+      ticketsRepo.listByPipelineStateAndRepo(s, owner, name)
+    )
   );
-  const developRows = ['develop', 'queued'].flatMap((s) => ticketsRepo.listByPipelineStateAndRepo(s, owner, name));
+  const stagingRows = stagingRowLists.flat();
+  const developRowLists = await Promise.all(
+    ['develop', 'queued'].map((s) => ticketsRepo.listByPipelineStateAndRepo(s, owner, name))
+  );
+  const developRows = developRowLists.flat();
   const cuts = await syncReleaseCutsFromGithub({
     github,
     cutsRepo,
@@ -89,7 +95,7 @@ function createBranchesRouter({ reposRepo, displayGithub, ticketsRepo, cutsRepo,
 
   router.get('/branches', async (req, res, next) => {
     try {
-      const activeRepos = reposRepo.list({ activeOnly: true });
+      const activeRepos = await reposRepo.list({ activeOnly: true });
       const results = await Promise.all(
         activeRepos.map((repo) =>
           branchesForRepo({

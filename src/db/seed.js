@@ -1,6 +1,6 @@
 /**
  * Dev convenience only — NOT part of the runtime app. Populates the
- * SQLite DB with mockup-shaped sample tickets/events so the dashboard
+ * Postgres DB with mockup-shaped sample tickets/events so the dashboard
  * has realistic data to click through without live Jira/GitHub access.
  * Run with `npm run seed`.
  */
@@ -40,8 +40,8 @@ const LOG = [
   { minsAgo: 260, ticket: 'PROJ-136', trigger: 'Poll · status change', action: 'label', outcome: 'NOTED', title: 'No git action taken', detail: 'In Development — comment posted, branch left unmerged' },
 ];
 
-function run() {
-  const db = createDb(config.DB_PATH);
+async function run() {
+  const db = await createDb(config.DATABASE_URL);
   const ticketsRepo = createTicketsRepo(db);
   const eventsRepo = createEventsRepo(db);
   const cursorRepo = createCursorRepo(db);
@@ -49,10 +49,11 @@ function run() {
 
   const now = Date.now();
 
-  reposRepo.add(DEMO_REPO.owner, DEMO_REPO.name);
+  await reposRepo.add(DEMO_REPO.owner, DEMO_REPO.name);
 
   for (const t of TICKETS) {
-    ticketsRepo.upsert({
+    // eslint-disable-next-line no-await-in-loop
+    await ticketsRepo.upsert({
       key: t.key,
       repoOwner: DEMO_REPO.owner,
       repoName: DEMO_REPO.name,
@@ -72,7 +73,8 @@ function run() {
   }
 
   for (const e of [...LOG].reverse()) {
-    eventsRepo.insertEvent({
+    // eslint-disable-next-line no-await-in-loop
+    await eventsRepo.insertEvent({
       ticketKey: e.ticket,
       trigger: e.trigger,
       action: e.action,
@@ -86,15 +88,19 @@ function run() {
     });
   }
 
-  cursorRepo.setCursor(new Date(now - 2 * 60 * 1000).toISOString());
-  cursorRepo.recordPoll({ ok: true, error: null });
-  cursorRepo.setJiraRateLimit({ remaining: 9410, resetAt: new Date(now + 30 * 60 * 1000).toISOString() });
+  await cursorRepo.setCursor(new Date(now - 2 * 60 * 1000).toISOString());
+  await cursorRepo.recordPoll({ ok: true, error: null });
+  await cursorRepo.setJiraRateLimit({ remaining: 9410, resetAt: new Date(now + 30 * 60 * 1000).toISOString() });
 
   // eslint-disable-next-line no-console
   console.log(
-    `Seeded ${TICKETS.length} tickets, ${LOG.length} events, and 1 watched repo (${DEMO_REPO.owner}/${DEMO_REPO.name}) into ${config.DB_PATH}`
+    `Seeded ${TICKETS.length} tickets, ${LOG.length} events, and 1 watched repo (${DEMO_REPO.owner}/${DEMO_REPO.name}) into ${config.DATABASE_URL}`
   );
-  db.close();
+  await db.end();
 }
 
-run();
+run().catch((err) => {
+  // eslint-disable-next-line no-console
+  console.error(err);
+  process.exit(1);
+});

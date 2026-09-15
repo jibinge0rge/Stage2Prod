@@ -1,3 +1,4 @@
+const { newDb } = require('pg-mem');
 const { createDb } = require('../src/db');
 const { createTicketsRepo } = require('../src/db/repositories/ticketsRepo');
 const { createEventsRepo } = require('../src/db/repositories/eventsRepo');
@@ -7,8 +8,17 @@ const { createReposRepo } = require('../src/db/repositories/reposRepo');
 const { createCutsRepo } = require('../src/db/repositories/cutsRepo');
 const { RefLockManager } = require('../src/lib/mutex');
 
-function createTestDb() {
-  const db = createDb(':memory:');
+/**
+ * pg-mem gives each test its own isolated, in-memory Postgres-compatible
+ * database (via a `pg`-shaped Pool) — same ergonomics as the old
+ * `:memory:` SQLite db, but running the real Postgres-dialect migrations
+ * from src/db/migrations against a Postgres-compatible engine.
+ */
+async function createTestDb() {
+  const mem = newDb();
+  const { Pool } = mem.adapters.createPg();
+  const pool = new Pool();
+  const db = await createDb({ pool });
   const ticketsRepo = createTicketsRepo(db);
   const eventsRepo = createEventsRepo(db);
   const cursorRepo = createCursorRepo(db);
@@ -20,8 +30,8 @@ function createTestDb() {
   return { db, ticketsRepo, eventsRepo, cursorRepo, lockEventsRepo, reposRepo, cutsRepo, lockManager };
 }
 
-function seedTicket(ticketsRepo, overrides = {}) {
-  ticketsRepo.upsert({
+async function seedTicket(ticketsRepo, overrides = {}) {
+  await ticketsRepo.upsert({
     key: 'PROJ-100',
     summary: 'Test ticket',
     jiraStatus: 'In QA',
