@@ -166,14 +166,21 @@ docker compose up --build
 ```
 
 `docker-compose.yml` includes a `postgres:16-alpine` service (data persisted in the `stage2prod-pgdata`
-named volume) that the app service waits on (`depends_on: condition: service_healthy`) and connects to via
-`DATABASE_URL` by default. The app itself reads `.env` from the repo root (`env_file: .env`). The app is
-then at `http://localhost:3000`.
+named volume, and published on `localhost:5432` for convenience) that the app service waits on
+(`depends_on: condition: service_healthy`). The app reads `.env` from the repo root (`env_file: .env`); if
+`.env` sets `DATABASE_URL`, that's what the container uses — otherwise it falls back to the bundled
+`postgres` service above. The app is then at `http://localhost:3000`.
 
-To point the container at a different Postgres instead — a managed/cloud database rather than the bundled
-one — set `DATABASE_URL` in `.env`; it overrides the compose default and the bundled `postgres` service is
-simply unused (you can drop it from the `stage2prod` service's `depends_on` locally if you don't want it
-started at all).
+**Using a managed/cloud Postgres (e.g. Neon, RDS, Supabase) instead of the bundled one**: just set
+`DATABASE_URL` in `.env` to that database's connection string and run `docker compose up --build` as
+normal — the bundled `postgres` service still starts (harmless; drop it, or its `depends_on` entry on
+`stage2prod`, if you'd rather it didn't), but the app connects to the URL from `.env` instead.
+
+**Do not** put a `localhost`-pointing `DATABASE_URL` in `.env` if you're using `docker compose up` — inside
+the `stage2prod` container, `localhost` means the container itself, not your host, so that combination
+fails with `ECONNREFUSED 127.0.0.1:5432`. A `localhost` `DATABASE_URL` only makes sense when running the
+app directly on the host (`npm run dev` / `npm start`, against `docker compose up -d postgres`'s published
+port) — not through the full `docker compose up`.
 
 Without compose (bring your own Postgres):
 
