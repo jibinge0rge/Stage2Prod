@@ -926,6 +926,56 @@ describe('GET /api/tickets/:key/pulls', () => {
         url: 'https://x/18',
         repo: { owner: 'acme', name: 'widgets' },
         target: 'staging',
+        merged: false,
+      },
+    ]);
+  });
+
+  it('also lists merged staging/production PRs, skipping closed-unmerged ones', async () => {
+    const ctx = await buildTestCtx();
+    await ctx.reposRepo.add('acme', 'widgets', { productionBranch: 'main', stagingBranch: 'qa' });
+    await ctx.ticketsRepo.upsert({
+      key: 'PROJ-1',
+      jiraStatus: 'In Progress',
+      pipelineState: 'unmerged',
+      repoOwner: 'acme',
+      repoName: 'widgets',
+    });
+    ctx.repoResolver.getClient = vi.fn(() => ({
+      listOpenPulls: vi.fn().mockResolvedValue([]),
+      listClosedPulls: vi.fn().mockResolvedValue([
+        {
+          number: 20,
+          title: 'merged fix',
+          head: { ref: 'hotfix-merged' },
+          base: { ref: 'qa' },
+          html_url: 'https://x/20',
+          merged_at: '2026-09-01T00:00:00Z',
+        },
+        {
+          number: 21,
+          title: 'abandoned',
+          head: { ref: 'abandoned' },
+          base: { ref: 'qa' },
+          html_url: 'https://x/21',
+          merged_at: null,
+        },
+      ]),
+    }));
+    const app = createApp(ctx);
+
+    const res = await request(app).get('/api/tickets/PROJ-1/pulls');
+    expect(res.status).toBe(200);
+    expect(res.body.pulls).toEqual([
+      {
+        number: 20,
+        title: 'merged fix',
+        headRef: 'hotfix-merged',
+        baseRef: 'qa',
+        url: 'https://x/20',
+        repo: { owner: 'acme', name: 'widgets' },
+        target: 'staging',
+        merged: true,
       },
     ]);
   });

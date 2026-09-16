@@ -61,11 +61,8 @@ async function listLinkablePulls({ ticketKey, ticketsRepo, reposRepo, repoResolv
   const repos = await reposForTicket(row, reposRepo);
   const pulls = [];
 
-  for (const repo of repos) {
-    const github = repoResolver.getClient(repo.owner, repo.name);
-    if (typeof github.listOpenPulls !== 'function') continue;
-    const open = await github.listOpenPulls().catch(() => []);
-    for (const pr of open) {
+  function addPulls(repo, list, { merged }) {
+    for (const pr of list) {
       const base = pr.base?.ref;
       if (base !== repo.stagingBranch && base !== repo.productionBranch) continue;
       const number = pr.number;
@@ -78,7 +75,22 @@ async function listLinkablePulls({ ticketKey, ticketsRepo, reposRepo, repoResolv
         url: pr.html_url,
         repo: { owner: repo.owner, name: repo.name },
         target: base === repo.stagingBranch ? 'staging' : 'production',
+        merged,
       });
+    }
+  }
+
+  for (const repo of repos) {
+    const github = repoResolver.getClient(repo.owner, repo.name);
+    if (typeof github.listOpenPulls === 'function') {
+      const open = await github.listOpenPulls().catch(() => []);
+      addPulls(repo, open, { merged: false });
+    }
+    if (typeof github.listClosedPulls === 'function') {
+      const closed = await github.listClosedPulls().catch(() => []);
+      // Only merged PRs map to a valid pipeline state (see pipelineStateFor)
+      // — a closed-but-unmerged PR has nowhere to attach to.
+      addPulls(repo, closed.filter((pr) => pr.merged_at), { merged: true });
     }
   }
 

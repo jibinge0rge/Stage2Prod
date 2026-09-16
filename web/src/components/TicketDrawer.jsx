@@ -62,7 +62,7 @@ function LinkPrForm({ ticketKey, ticket, pulls, onLinked }) {
     () =>
       pulls.map((p) => ({
         value: pullOptionValue(p),
-        label: `#${p.number} ${p.title} · ${p.headRef} → ${p.baseRef}`,
+        label: `#${p.number} ${p.title} · ${p.headRef} → ${p.baseRef}${p.merged ? ' (merged)' : ''}`,
       })),
     [pulls]
   );
@@ -103,11 +103,11 @@ function LinkPrForm({ ticketKey, ticket, pulls, onLinked }) {
       {options.length > 0 && (
         <CustomSelect
           value={selected}
-          placeholder="Choose an open PR…"
+          placeholder="Choose a PR…"
           options={options}
           disabled={linking}
           onChange={setSelected}
-          title="Open pull requests"
+          title="Open or merged pull requests"
         />
       )}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>

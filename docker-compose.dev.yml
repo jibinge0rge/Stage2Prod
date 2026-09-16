@@ -1,0 +1,42 @@
+# Local-dev overlay: adds a bundled Postgres and wires the app service to
+# it. Use alongside the base file:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+#
+# or just the database, if you're running the app on the host instead of
+# in Docker (`npm run dev`):
+#
+#   docker compose -f docker-compose.dev.yml up -d postgres
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=stage2prod
+      - POSTGRES_PASSWORD=stage2prod
+      - POSTGRES_DB=stage2prod
+    ports:
+      # Published to the host so `npm run dev` (running outside Docker) can
+      # reach this container at localhost:5432 — matches the DATABASE_URL
+      # default in src/config/index.js. Not used by the `stage2prod`
+      # service below, which talks to it over the compose network instead.
+      - "5432:5432"
+    volumes:
+      - stage2prod-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stage2prod -d stage2prod"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  stage2prod:
+    environment:
+      # Falls back to the bundled postgres service above when DATABASE_URL
+      # isn't set in .env.
+      - DATABASE_URL=${DATABASE_URL:-postgres://stage2prod:stage2prod@postgres:5432/stage2prod}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  stage2prod-pgdata:

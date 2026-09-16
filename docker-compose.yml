@@ -1,25 +1,7 @@
 services:
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      - POSTGRES_USER=stage2prod
-      - POSTGRES_PASSWORD=stage2prod
-      - POSTGRES_DB=stage2prod
-    ports:
-      # Published to the host so `npm run dev` (running outside Docker) can
-      # reach this container at localhost:5432 — matches the DATABASE_URL
-      # default in src/config/index.js. Not used by the `stage2prod`
-      # service below, which talks to it over the compose network instead.
-      - "5432:5432"
-    volumes:
-      - stage2prod-pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U stage2prod -d stage2prod"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-    restart: unless-stopped
-
+  # No bundled Postgres here — this file expects DATABASE_URL (in .env) to
+  # point at a database you already run (managed/cloud or self-hosted). For
+  # local dev with a bundled Postgres, see docker-compose.dev.yml.
   stage2prod:
     build: .
     image: stage2prod:latest
@@ -29,20 +11,5 @@ services:
       - .env
     environment:
       - PORT=3000
-      # Uses DATABASE_URL from .env when set (e.g. a managed/cloud Postgres
-      # URL — reachable the same way from inside or outside this
-      # container), otherwise falls back to the bundled postgres service
-      # above. Do NOT put a `localhost`-pointing DATABASE_URL in .env if
-      # you're using docker-compose — inside this container "localhost"
-      # means the container itself, not your host, so that combination
-      # will fail to connect. A `localhost` DATABASE_URL only makes sense
-      # for running the app directly on the host (`npm run dev`/`npm start`),
-      # not through this file.
-      - DATABASE_URL=${DATABASE_URL:-postgres://stage2prod:stage2prod@postgres:5432/stage2prod}
-    depends_on:
-      postgres:
-        condition: service_healthy
+      - DATABASE_URL=${DATABASE_URL}
     restart: unless-stopped
-
-volumes:
-  stage2prod-pgdata:

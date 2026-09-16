@@ -103,6 +103,16 @@ class GitHubClient {
     return pulls;
   }
 
+  // Closed PRs can span years of history, so unlike listOpenPulls this
+  // intentionally doesn't paginate to exhaustion — just the most recently
+  // updated page, which is what a user attaching a merged PR would look for.
+  async listClosedPulls({ perPage = 50 } = {}) {
+    return this._request(
+      'GET',
+      `/repos/${this.owner}/${this.repo}/pulls?state=closed&sort=updated&direction=desc&per_page=${perPage}`
+    );
+  }
+
   async getRef(branch) {
     const data = await this._request('GET', `/repos/${this.owner}/${this.repo}/git/ref/heads/${branch}`);
     return data.object.sha;

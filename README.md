@@ -56,13 +56,13 @@ cp .env.example .env
 ```
 
 Stage2Prod persists to Postgres (shared across every user, not a local file) — either point it at Postgres
-you already run, or use the `postgres` service in `docker-compose.yml` (see **Docker** below).
+you already run, or use the `postgres` service in `docker-compose.dev.yml` (see **Docker** below).
 
 Fill in `.env`:
 
 | Var | Notes |
 |---|---|
-| `DATABASE_URL` | Postgres connection string, `postgres://user:password@host:port/database`. Defaults to `postgres://stage2prod:stage2prod@localhost:5432/stage2prod` if unset — matches `docker compose up -d postgres`. |
+| `DATABASE_URL` | Postgres connection string, `postgres://user:password@host:port/database`. Defaults to `postgres://stage2prod:stage2prod@localhost:5432/stage2prod` if unset — matches `docker compose -f docker-compose.dev.yml up -d postgres`. |
 | `GITHUB_TOKEN` | A GitHub PAT (classic or fine-grained) with `repo` scope, covering every repo you'll watch. |
 | `JIRA_HOST` | e.g. `your-domain.atlassian.net` |
 | `JIRA_EMAIL` / `JIRA_API_TOKEN` | See **Creating a Jira API token** below. |
@@ -74,10 +74,10 @@ Fill in `.env`:
 Note there's no `GITHUB_OWNER`/`GITHUB_REPO` — Stage2Prod watches however many repos you connect at runtime
 (see **Watching repositories** below), not one fixed repo baked into `.env`.
 
-Start Postgres (skip if `DATABASE_URL` already points at one you run yourself):
+Start Postgres (skip if `DATABASE_URL` already points at one you run yourself, e.g. a managed/remote instance):
 
 ```bash
-docker compose up -d postgres
+docker compose -f docker-compose.dev.yml up -d postgres
 ```
 
 Start the API:
@@ -165,22 +165,25 @@ single-port "Express serves the SPA + the API" mode as `npm start`. It runs as a
 docker compose up --build
 ```
 
-`docker-compose.yml` includes a `postgres:16-alpine` service (data persisted in the `stage2prod-pgdata`
-named volume, and published on `localhost:5432` for convenience) that the app service waits on
-(`depends_on: condition: service_healthy`). The app reads `.env` from the repo root (`env_file: .env`); if
-`.env` sets `DATABASE_URL`, that's what the container uses — otherwise it falls back to the bundled
-`postgres` service above. The app is then at `http://localhost:3000`.
+`docker-compose.yml` does **not** bundle a database — it expects `DATABASE_URL` in `.env` to point at a
+Postgres you already run (managed/cloud, e.g. Neon, RDS, Supabase, or self-hosted). The app reads `.env`
+from the repo root (`env_file: .env`). The app is then at `http://localhost:3000`.
 
-**Using a managed/cloud Postgres (e.g. Neon, RDS, Supabase) instead of the bundled one**: just set
-`DATABASE_URL` in `.env` to that database's connection string and run `docker compose up --build` as
-normal — the bundled `postgres` service still starts (harmless; drop it, or its `depends_on` entry on
-`stage2prod`, if you'd rather it didn't), but the app connects to the URL from `.env` instead.
+**Local dev with a bundled Postgres**: use the `docker-compose.dev.yml` overlay, which adds a
+`postgres:16-alpine` service (data persisted in the `stage2prod-pgdata` named volume, published on
+`localhost:5432` for convenience) that the app service waits on (`depends_on: condition: service_healthy`),
+and falls back to it when `DATABASE_URL` isn't set in `.env`:
 
-**Do not** put a `localhost`-pointing `DATABASE_URL` in `.env` if you're using `docker compose up` — inside
-the `stage2prod` container, `localhost` means the container itself, not your host, so that combination
-fails with `ECONNREFUSED 127.0.0.1:5432`. A `localhost` `DATABASE_URL` only makes sense when running the
-app directly on the host (`npm run dev` / `npm start`, against `docker compose up -d postgres`'s published
-port) — not through the full `docker compose up`.
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+```
+
+**Do not** put a `localhost`-pointing `DATABASE_URL` in `.env` if you're using `docker compose up` with the
+dev overlay — inside the `stage2prod` container, `localhost` means the container itself, not your host, so
+that combination fails with `ECONNREFUSED 127.0.0.1:5432`. A `localhost` `DATABASE_URL` only makes sense
+when running the app directly on the host (`npm run dev` / `npm start`, against
+`docker compose -f docker-compose.dev.yml up -d postgres`'s published port) — not through the full
+`docker compose up`.
 
 Without compose (bring your own Postgres):
 

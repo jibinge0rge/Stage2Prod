@@ -39,6 +39,24 @@ async function baseDeps() {
         html_url: 'https://x/19',
       },
     ]),
+    listClosedPulls: vi.fn().mockResolvedValue([
+      {
+        number: 20,
+        title: 'merged fix',
+        head: { ref: 'hotfix-merged' },
+        base: { ref: 'qa' },
+        html_url: 'https://x/20',
+        merged_at: '2026-09-01T00:00:00Z',
+      },
+      {
+        number: 21,
+        title: 'abandoned',
+        head: { ref: 'abandoned' },
+        base: { ref: 'qa' },
+        html_url: 'https://x/21',
+        merged_at: null,
+      },
+    ]),
   };
   const jira = { addComment: vi.fn().mockResolvedValue({ commented: true }) };
   const repoResolver = { getClient: vi.fn(() => github) };
@@ -144,16 +162,38 @@ describe('linkTicketPr', () => {
 });
 
 describe('listLinkablePulls', () => {
-  it('returns open PRs into staging or production and skips other bases', async () => {
+  it('returns open and merged PRs into staging or production, skipping other bases and closed-unmerged', async () => {
     const deps = await baseDeps();
     const { pulls } = await listLinkablePulls(deps);
-    expect(pulls.map((p) => p.number)).toEqual([18]);
+    expect(pulls.map((p) => p.number)).toEqual([18, 20]);
     expect(pulls[0]).toMatchObject({
       title: 'fix login',
       headRef: 'hotfix-login',
       baseRef: 'qa',
       target: 'staging',
       repo: { owner: 'acme', name: 'widgets' },
+      merged: false,
     });
+    expect(pulls[1]).toMatchObject({
+      title: 'merged fix',
+      headRef: 'hotfix-merged',
+      baseRef: 'qa',
+      target: 'staging',
+      merged: true,
+    });
+  });
+
+  it('excludes a merged PR already linked to another ticket', async () => {
+    const deps = await baseDeps();
+    await seedTicket(deps.ticketsRepo, {
+      key: 'PROJ-2',
+      jiraStatus: 'In QA',
+      pipelineState: PIPELINE_STATES.STAGING,
+      repoOwner: 'acme',
+      repoName: 'widgets',
+    });
+    await deps.ticketsRepo.setGithubFacts('PROJ-2', { prNumber: 20 });
+    const { pulls } = await listLinkablePulls(deps);
+    expect(pulls.map((p) => p.number)).toEqual([18]);
   });
 });
